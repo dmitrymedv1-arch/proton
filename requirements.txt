@@ -8,9 +8,10 @@ scikit-learn
 scipy
 xlsxwriter
 openpyxl
-pandas-profiling
+ydata-profiling
 joblib
 xgboost
 shap
+
 
 
