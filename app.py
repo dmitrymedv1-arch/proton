@@ -1502,7 +1502,7 @@ def show_about():
     st.markdown("---")
     
     st.markdown("""
-    ## Perovskite Hydration Predictor
+    ## About
     
     This application provides a comprehensive database and machine learning tools 
     for predicting hydration thermodynamics in proton-conducting perovskite materials.
