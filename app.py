@@ -1551,20 +1551,18 @@ def create_proton_concentration_3d(model_data, df_features):
 # =============================================================================
 @st.cache_resource
 def train_prediction_models(df):
-    """Train ML models for predicting delta_H and delta_S with enhanced features"""
+    """Optimized ML models for predicting delta_H and delta_S"""
     
-    # Enhanced feature list including new descriptors
+    # Enhanced feature list
     feature_cols = [
         'content', 'r_A_XII', 'r_B_VI', 'r_D_VI', 'r_B_avg', 'delta_r_B',
         't_Goldschmidt', 'octahedral_factor', 'global_instability', 'lattice_energy',
         'chi_A', 'chi_B', 'chi_D', 'chi_B_avg', 'chi_diff', 'chi_product',
-        'polarizability_A', 'polarizability_B', 'polarizability_D', 'polarizability_avg',
-        'ionization_A', 'ionization_B', 'ionization_D', 'ionization_avg',
-        'charge_density_A', 'charge_density_B', 'charge_density_D',
-        'oxygen_vacancy', 'bond_valence_sum'
+        'polarizability_avg', 'ionization_avg', 'charge_density_A', 'charge_density_B',
+        'oxygen_vacancy'
     ]
     
-    # Calculate descriptors for all rows
+    # Calculate descriptors
     descriptor_list = []
     valid_indices = []
     
@@ -1583,7 +1581,7 @@ def train_prediction_models(df):
     df_features = pd.DataFrame(descriptor_list)
     
     if len(df_features) < 10:
-        return None, None, None, None, df_features
+        return None, df_features
     
     # Prepare X and y
     available_features = [f for f in feature_cols if f in df_features.columns]
@@ -1610,48 +1608,47 @@ def train_prediction_models(df):
     X_scaled = scaler.fit_transform(X)
     
     # =========================================================
-    # Multiple models for comparison
+    # OPTIMIZED: Only 2 main models for speed
     # =========================================================
     
-    # 1. XGBoost with optimized hyperparameters
+    # 1. XGBoost (reduced complexity)
     xgb_model_H = xgb.XGBRegressor(
-        n_estimators=200,
-        max_depth=6,
-        learning_rate=0.05,
+        n_estimators=100,  # Reduced from 200
+        max_depth=4,        # Reduced from 6
+        learning_rate=0.1,
         subsample=0.8,
         colsample_bytree=0.8,
-        reg_alpha=0.1,
-        reg_lambda=1.0,
         random_state=42,
-        n_jobs=-1
+        n_jobs=-1,
+        verbosity=0
     )
     xgb_model_S = xgb.XGBRegressor(
-        n_estimators=200,
-        max_depth=6,
-        learning_rate=0.05,
+        n_estimators=100,
+        max_depth=4,
+        learning_rate=0.1,
         subsample=0.8,
         colsample_bytree=0.8,
-        reg_alpha=0.1,
-        reg_lambda=1.0,
         random_state=42,
-        n_jobs=-1
+        n_jobs=-1,
+        verbosity=0
     )
     
+    # Train quickly
     xgb_model_H.fit(X_scaled, y_H)
     xgb_model_S.fit(X_scaled, y_S)
     
-    # 2. Random Forest for comparison
+    # 2. Random Forest (faster than Gradient Boosting)
     rf_model_H = RandomForestRegressor(
-        n_estimators=200,
-        max_depth=8,
+        n_estimators=100,   # Reduced from 200
+        max_depth=6,         # Reduced from 8
         min_samples_split=5,
         min_samples_leaf=2,
         random_state=42,
         n_jobs=-1
     )
     rf_model_S = RandomForestRegressor(
-        n_estimators=200,
-        max_depth=8,
+        n_estimators=100,
+        max_depth=6,
         min_samples_split=5,
         min_samples_leaf=2,
         random_state=42,
@@ -1661,89 +1658,60 @@ def train_prediction_models(df):
     rf_model_H.fit(X_scaled, y_H)
     rf_model_S.fit(X_scaled, y_S)
     
-    # 3. Gradient Boosting
-    gb_model_H = GradientBoostingRegressor(
-        n_estimators=200,
-        max_depth=5,
-        learning_rate=0.05,
-        subsample=0.8,
-        random_state=42
-    )
-    gb_model_S = GradientBoostingRegressor(
-        n_estimators=200,
-        max_depth=5,
-        learning_rate=0.05,
-        subsample=0.8,
-        random_state=42
-    )
+    # OPTIMIZED: Fast cross-validation (only 3 folds)
+    from sklearn.model_selection import cross_val_score
+    cv_scores_H = cross_val_score(xgb_model_H, X_scaled, y_H, cv=min(3, len(X)), scoring='r2', n_jobs=-1)
+    cv_scores_S = cross_val_score(xgb_model_S, X_scaled, y_S, cv=min(3, len(X)), scoring='r2', n_jobs=-1)
     
-    gb_model_H.fit(X_scaled, y_H)
-    gb_model_S.fit(X_scaled, y_S)
-    
-    # 4. ElasticNet with polynomial features
-    poly = PolynomialFeatures(degree=2, include_bias=False)
-    X_poly = poly.fit_transform(X_scaled)
-    
-    elastic_H = ElasticNet(alpha=0.01, l1_ratio=0.5, random_state=42, max_iter=10000)
-    elastic_S = ElasticNet(alpha=0.01, l1_ratio=0.5, random_state=42, max_iter=10000)
-    
-    elastic_H.fit(X_poly, y_H)
-    elastic_S.fit(X_poly, y_S)
-    
-    # Cross-validation scores
-    cv_scores_H = cross_val_score(xgb_model_H, X_scaled, y_H, cv=min(5, len(X)), scoring='r2')
-    cv_scores_S = cross_val_score(xgb_model_S, X_scaled, y_S, cv=min(5, len(X)), scoring='r2')
-    
-    # Feature importance (XGBoost)
+    # Feature importance
     feature_importance_H = pd.DataFrame({
         'feature': feature_names,
         'importance': xgb_model_H.feature_importances_
     }).sort_values('importance', ascending=False)
     
-    # =========================================================
-    # SHAP analysis
-    # =========================================================
-    try:
-        explainer_H = shap.TreeExplainer(xgb_model_H)
-        shap_values_H = explainer_H.shap_values(X_scaled)
-        shap_expected_H = explainer_H.expected_value
-        
-        explainer_S = shap.TreeExplainer(xgb_model_S)
-        shap_values_S = explainer_S.shap_values(X_scaled)
-        shap_expected_S = explainer_S.expected_value
-        
-        # SHAP summary
-        shap_summary_H = pd.DataFrame({
-            'feature': feature_names,
-            'mean_abs_shap': np.abs(shap_values_H).mean(axis=0)
-        }).sort_values('mean_abs_shap', ascending=False)
-        
-    except Exception as e:
-        shap_values_H = None
-        shap_values_S = None
-        shap_expected_H = None
-        shap_expected_S = None
-        shap_summary_H = feature_importance_H.copy()
-        shap_summary_H.columns = ['feature', 'mean_abs_shap']
+    # OPTIMIZED: SHAP analysis on subset only (if needed)
+    shap_values_H = None
+    shap_values_S = None
+    shap_expected_H = None
+    shap_expected_S = None
+    shap_summary_H = feature_importance_H.copy()
+    shap_summary_H.columns = ['feature', 'mean_abs_shap']
+    
+    # Only do SHAP if requested and dataset is small
+    if len(df_features) < 100:  # Only for smaller datasets
+        try:
+            # Use subset for SHAP to speed up
+            sample_size = min(50, len(X_scaled))
+            X_sample = X_scaled[:sample_size]
+            
+            explainer_H = shap.TreeExplainer(xgb_model_H)
+            shap_values_H = explainer_H.shap_values(X_sample)
+            shap_expected_H = explainer_H.expected_value
+            
+            explainer_S = shap.TreeExplainer(xgb_model_S)
+            shap_values_S = explainer_S.shap_values(X_sample)
+            shap_expected_S = explainer_S.expected_value
+            
+            shap_summary_H = pd.DataFrame({
+                'feature': feature_names,
+                'mean_abs_shap': np.abs(shap_values_H).mean(axis=0)
+            }).sort_values('mean_abs_shap', ascending=False)
+        except:
+            pass  # Silently fail if SHAP fails
     
     return {
         'models': {
             'xgb_H': xgb_model_H,
             'xgb_S': xgb_model_S,
             'rf_H': rf_model_H,
-            'rf_S': rf_model_S,
-            'gb_H': gb_model_H,
-            'gb_S': gb_model_S,
-            'elastic_H': elastic_H,
-            'elastic_S': elastic_S
+            'rf_S': rf_model_S
         },
-        'poly': poly,
         'scaler': scaler,
         'feature_names': feature_names,
-        'cv_H_mean': cv_scores_H.mean(),
-        'cv_S_mean': cv_scores_S.mean(),
-        'cv_H_std': cv_scores_H.std(),
-        'cv_S_std': cv_scores_S.std(),
+        'cv_H_mean': cv_scores_H.mean() if len(cv_scores_H) > 0 else 0,
+        'cv_S_mean': cv_scores_S.mean() if len(cv_scores_S) > 0 else 0,
+        'cv_H_std': cv_scores_H.std() if len(cv_scores_H) > 0 else 0,
+        'cv_S_std': cv_scores_S.std() if len(cv_scores_S) > 0 else 0,
         'feature_importance': feature_importance_H,
         'shap_values_H': shap_values_H,
         'shap_values_S': shap_values_S,
@@ -3953,3 +3921,4 @@ def main():
 # =============================================================================
 if __name__ == "__main__":
     main()
+
