@@ -9,7 +9,7 @@ scipy
 xlsxwriter
 openpyxl
 pandas-profiling
-sweetviz
 joblib
-
+xgboost
+snap
 
