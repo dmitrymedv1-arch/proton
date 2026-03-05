@@ -1517,5 +1517,6 @@ def show_about():
     
     ### Citation
     
-    If you use this tool in your research, please cite:
+    If you use this tool in your research, please cite'''
     
+
