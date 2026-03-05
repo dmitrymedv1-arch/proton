@@ -8,8 +8,8 @@ scikit-learn
 scipy
 xlsxwriter
 openpyxl
-xgboost
 pandas-profiling
 sweetviz
 joblib
+
 
