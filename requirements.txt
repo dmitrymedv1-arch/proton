@@ -7,5 +7,5 @@ plotly
 scikit-learn
 scipy
 xlsxwriter
-xgb
 openpyxl
+
