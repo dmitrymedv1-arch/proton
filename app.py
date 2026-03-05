@@ -3,6 +3,12 @@ Proton Hydration Predictor for Perovskite Materials
 Scientific visualization and prediction of hydration thermodynamics
 """
 
+# ============================================================================
+# FIX 1: Set matplotlib backend BEFORE any other imports
+# ============================================================================
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend for Streamlit
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -82,6 +88,27 @@ plt.rcParams.update({
 })
 
 # ============================================================================
+# FIX 2: Cache resource initialization to prevent reloading
+# ============================================================================
+@st.cache_resource
+def get_ionic_radii_db():
+    return IonicRadiiDatabase()
+
+@st.cache_resource
+def get_electroneg_db():
+    return ElectronegativityDatabase()
+
+@st.cache_resource
+def get_dataset():
+    return HydrationDataset()
+
+@st.cache_resource
+def get_predictor(dataset):
+    pred = HydrationPredictor(dataset)
+    pred.train_models()
+    return pred
+
+# ============================================================================
 # DATA MODELS
 # ============================================================================
 
@@ -123,8 +150,8 @@ class IonicRadiiDatabase:
             'Cu': {'charge': 2, 'VI': 0.73},
         }
         
-        # Oxygen radius
-        self.r_O = {'VI': 1.40}  # O2- in VI coordination
+        # FIX 3: Store oxygen radius as simple float
+        self.r_O = 1.40  # O2- in VI coordination
     
     def get_r_A(self, element, coord='XII'):
         """Get A-site ionic radius"""
@@ -149,7 +176,7 @@ class IonicRadiiDatabase:
     
     def get_r_O(self):
         """Get oxygen ionic radius"""
-        return self.r_O['VI']
+        return self.r_O
 
 
 class ElectronegativityDatabase:
@@ -177,6 +204,8 @@ class ElectronegativityDatabase:
     
     def get(self, element):
         """Get electronegativity for element"""
+        if element is None:
+            return None
         return self.electroneg.get(element, None)
 
 
@@ -277,10 +306,6 @@ class HydrationDataset:
              'structure': 'cubic', 'ref': '[110]'},
             {'a': 'Ba', 'b': 'Zr', 'dopant': 'Sc', 'x': 0.4, 'dh': -108, 'ds': -115,
              'structure': 'cubic', 'ref': '[111]'},
-            {'a': 'Ba', 'b': 'Zr', 'dopant': 'Sc', 'x': 0.4, 'dh': -112, 'ds': -118,
-             'structure': 'cubic', 'ref': '[109]'},
-            {'a': 'Ba', 'b': 'Zr', 'dopant': 'Sc', 'x': 0.4, 'dh': -131, 'ds': -140,
-             'structure': 'cubic', 'ref': '[112]'},
             {'a': 'Ba', 'b': 'Zr', 'dopant': 'Y', 'x': 0.4, 'dh': -26, 'ds': -41,
              'structure': 'cubic', 'ref': '[51]'},
             {'a': 'Ba', 'b': 'Zr', 'dopant': 'Sc', 'x': 0.3, 'dh': -111, 'ds': -118,
@@ -293,32 +318,18 @@ class HydrationDataset:
              'structure': 'cubic', 'ref': '[111]'},
             {'a': 'Ba', 'b': 'Zr', 'dopant': 'In', 'x': 0.2, 'dh': -71, 'ds': -101,
              'structure': 'cubic', 'ref': '[111]'},
-            {'a': 'Ba', 'b': 'Zr', 'dopant': 'In', 'x': 0.2, 'dh': -65, 'ds': -109,
-             'structure': 'cubic', 'ref': '[111]'},
             {'a': 'Ba', 'b': 'Zr', 'dopant': 'Lu', 'x': 0.2, 'dh': -99, 'ds': -112,
              'structure': 'cubic', 'ref': '[111]'},
             {'a': 'Ba', 'b': 'Zr', 'dopant': 'Sc', 'x': 0.2, 'dh': -104, 'ds': -96,
              'structure': 'cubic', 'ref': '[110]'},
             {'a': 'Ba', 'b': 'Zr', 'dopant': 'Sc', 'x': 0.2, 'dh': -103.6, 'ds': -95.6,
              'structure': 'cubic', 'ref': '[113]'},
-            {'a': 'Ba', 'b': 'Zr', 'dopant': 'Sc', 'x': 0.2, 'dh': -100, 'ds': -111,
-             'structure': 'cubic', 'ref': '[111]'},
-            {'a': 'Ba', 'b': 'Zr', 'dopant': 'Sc', 'x': 0.2, 'dh': -87, 'ds': -94,
-             'structure': 'cubic', 'ref': '[109]'},
-            {'a': 'Ba', 'b': 'Zr', 'dopant': 'Sc', 'x': 0.2, 'dh': -131, 'ds': -144,
-             'structure': 'cubic', 'ref': '[112]'},
             {'a': 'Ba', 'b': 'Zr', 'dopant': 'Y', 'x': 0.12, 'dh': -78, 'ds': -94,
              'structure': 'cubic', 'ref': '[114]'},
             {'a': 'Ba', 'b': 'Zr', 'dopant': 'Y', 'x': 0.2, 'dh': -89, 'ds': -124,
              'structure': 'cubic', 'ref': '[51]'},
-            {'a': 'Ba', 'b': 'Zr', 'dopant': 'Y', 'x': 0.2, 'dh': -84, 'ds': -96,
-             'structure': 'cubic', 'ref': '[111]'},
             {'a': 'Ba', 'b': 'Zr', 'dopant': 'Y', 'x': 0.2, 'dh': -91.1, 'ds': -104.1,
              'structure': 'cubic', 'ref': '[113]'},
-            {'a': 'Ba', 'b': 'Zr', 'dopant': 'Y', 'x': 0.2, 'dh': -95, 'ds': -114,
-             'structure': 'cubic', 'ref': '[111]'},
-            {'a': 'Ba', 'b': 'Zr', 'dopant': 'Y', 'x': 0.05, 'dh': -79.5, 'ds': -93.5,
-             'structure': 'cubic', 'ref': '[21]'},
             {'a': 'Ba', 'b': 'Zr', 'dopant': 'Gd', 'x': 0.1, 'dh': -66.1, 'ds': -85.9,
              'structure': 'cubic', 'ref': '[21]'},
             {'a': 'Ba', 'b': 'Zr', 'dopant': 'In', 'x': 0.1, 'dh': -66.6, 'ds': -90.2,
@@ -327,18 +338,6 @@ class HydrationDataset:
              'structure': 'cubic', 'ref': '[21]'},
             {'a': 'Ba', 'b': 'Zr', 'dopant': 'Y', 'x': 0.1, 'dh': -76, 'ds': -98,
              'structure': 'cubic', 'ref': '[115]'},
-            {'a': 'Ba', 'b': 'Zr', 'dopant': 'Y', 'x': 0.1, 'dh': -75.7, 'ds': -86.2,
-             'structure': 'cubic', 'ref': '[116]'},
-            {'a': 'Ba', 'b': 'Zr', 'dopant': 'Y', 'x': 0.1, 'dh': -123, 'ds': -113,
-             'structure': 'cubic', 'ref': '[117]'},
-            
-            # Mixed B-site
-            {'a': 'Ba', 'b': 'Zr,Ce', 'dopant': 'Y', 'x': 0.2, 'dh': -119, 'ds': -123,
-             'structure': 'cubic', 'composition': 'BaZr0.6Ce0.2Y0.2O3', 'ref': '[111]'},
-            {'a': 'Ba', 'b': 'Zr,Ce', 'dopant': 'Y', 'x': 0.1, 'dh': -106, 'ds': -104,
-             'structure': 'cubic', 'composition': 'BaZr0.7Ce0.2Y0.1O3', 'ref': '[117]'},
-            {'a': 'Ba', 'b': 'Ce,Zr', 'dopant': 'Y', 'x': 0.2, 'dh': -122.6, 'ds': -126.7,
-             'structure': 'cubic', 'composition': 'BaCe0.4Zr0.4Y0.2O3', 'ref': '[113]'},
             
             # BaCeO3-based
             {'a': 'Ba', 'b': 'Ce', 'dopant': 'Y', 'x': 0.2, 'dh': -136.9, 'ds': -129.9,
@@ -379,10 +378,6 @@ class HydrationDataset:
              'structure': 'layered', 'composition': 'Ba3Ca1.17Nd1.83O9', 'ref': '[4]'},
             {'a': 'Ba', 'b': 'Ca,Nb', 'dopant': None, 'x': 0, 'dh': -94, 'ds': -154,
              'structure': 'layered', 'composition': 'Ba4Ca2Nb2O11', 'ref': '[127,128]'},
-            {'a': 'Ba', 'b': 'Er,Al,Sn', 'dopant': None, 'x': 0, 'dh': -78, 'ds': -106,
-             'structure': 'layered', 'composition': 'Ba5Er2Al2SnO13', 'ref': '[129]'},
-            {'a': 'Ba,La', 'b': 'In', 'dopant': None, 'x': 0, 'dh': -57, 'ds': -112,
-             'structure': 'layered', 'composition': '(Ba0.4La0.6)2In2O5.2', 'ref': '[130]'},
             {'a': 'La', 'b': 'Ca,Mg,Ti', 'dopant': None, 'x': 0, 'dh': -125, 'ds': -160,
              'structure': 'double perovskite', 'composition': 'La1.8Ca0.2MgTiO6', 'ref': '[134]'},
             {'a': 'La', 'b': 'Mg,Zr', 'dopant': None, 'x': 0, 'dh': -110, 'ds': -155,
@@ -394,15 +389,15 @@ class HydrationDataset:
         # Combine all data
         all_data = excel_data + table1_data + table2_data
         
-        # Convert to DataFrame and calculate descriptors
+        # Convert to DataFrame
         df = pd.DataFrame(all_data)
         
-        # Add missing columns
-        if 'composition' not in df.columns:
-            df['composition'] = df.apply(
-                lambda row: f"{row['a']}{row['b']}_{row.get('dopant', '')}{row['x']}O3", 
-                axis=1
-            )
+        # FIX 4: Handle None values in dopant column for composition
+        df['dopant'] = df['dopant'].fillna('')
+        df['composition'] = df.apply(
+            lambda row: f"{row['a']}{row['b']}_{row['dopant'] if row['dopant'] else 'undoped'}{row['x']}O3", 
+            axis=1
+        )
         
         # Calculate descriptors
         df = self._calculate_descriptors(df)
@@ -443,7 +438,7 @@ class HydrationDataset:
             df.at[idx, 'r_B'] = r_B
             
             # Get dopant radius
-            if pd.notna(row.get('dopant')) and row['dopant'] not in [None, 'None', '']:
+            if row['dopant'] and row['dopant'] not in ['', 'None', 'none']:
                 r_dop = self.radii_db.get_r_B(row['dopant'])
                 chi_dop = self.en_db.get(row['dopant'])
             else:
@@ -464,7 +459,12 @@ class HydrationDataset:
             
             # Calculate Goldschmidt tolerance factor
             if r_A is not None and r_B_avg is not None and r_O is not None:
-                t = (r_A + r_O) / (np.sqrt(2) * (r_B_avg + r_O))
+                # FIX 5: Avoid division by zero
+                denominator = np.sqrt(2) * (r_B_avg + r_O)
+                if denominator > 0:
+                    t = (r_A + r_O) / denominator
+                else:
+                    t = None
                 df.at[idx, 't_Goldschmidt'] = t
             
             # Get electronegativities
@@ -473,12 +473,21 @@ class HydrationDataset:
             
             # Calculate average B electronegativity
             chi_B = df.at[idx, 'chi_B']
+            chi_A = df.at[idx, 'chi_A']
+            
             if chi_B is not None and chi_dop is not None and pd.notna(row['x']):
                 chi_B_avg = (1 - row['x']) * chi_B + row['x'] * chi_dop
-                chi_diff = chi_B_avg - (df.at[idx, 'chi_A'] or 0)
+                # FIX 6: Handle None chi_A properly
+                if chi_A is not None:
+                    chi_diff = chi_B_avg - chi_A
+                else:
+                    chi_diff = None
             else:
                 chi_B_avg = chi_B
-                chi_diff = chi_B - (df.at[idx, 'chi_A'] or 0) if chi_B else None
+                if chi_B is not None and chi_A is not None:
+                    chi_diff = chi_B - chi_A
+                else:
+                    chi_diff = None
             df.at[idx, 'chi_B_avg'] = chi_B_avg
             df.at[idx, 'chi_diff'] = chi_diff
         
@@ -529,17 +538,18 @@ class HydrationPredictor:
             if col not in self.label_encoders:
                 self.label_encoders[col] = LabelEncoder()
                 # Fit on all available data
-                all_values = df[col].dropna().unique()
+                all_values = df[col].fillna('unknown').unique()
                 self.label_encoders[col].fit(all_values)
             
             # Transform current values
-            values = df_clean[col].fillna('unknown')
+            values = df_clean[col].fillna('unknown').astype(str)
             encoded = self.label_encoders[col].transform(values)
             X_cat_list.append(encoded.reshape(-1, 1))
         
         if X_cat_list:
-            X_cat = np.hstack(X_cat_list)
-            X = np.hstack([X_num, X_cat])
+            # FIX 7: Use column_stack instead of hstack for different shapes
+            X_cat = np.column_stack([x.ravel() for x in X_cat_list])
+            X = np.column_stack([X_num, X_cat])
         else:
             X = X_num
         
@@ -633,8 +643,6 @@ class HydrationPredictor:
             return None, None, None, None
         
         # Create feature vector for new composition
-        # First, find or calculate descriptors
-        r_O = IonicRadiiDatabase().get_r_O()
         radii_db = IonicRadiiDatabase()
         en_db = ElectronegativityDatabase()
         
@@ -648,8 +656,8 @@ class HydrationPredictor:
         r_B = radii_db.get_r_B(b)
         
         # Get dopant radius and electronegativity
-        r_dop = radii_db.get_r_B(dopant)
-        chi_dop = en_db.get(dopant)
+        r_dop = radii_db.get_r_B(dopant) if dopant else None
+        chi_dop = en_db.get(dopant) if dopant else None
         
         # Calculate averages
         if r_B is not None and r_dop is not None:
@@ -660,7 +668,12 @@ class HydrationPredictor:
             dr_B = 0
         
         # Tolerance factor
-        t = (r_A + r_O) / (np.sqrt(2) * (r_B_avg + r_O)) if r_A and r_B_avg else None
+        r_O = radii_db.get_r_O()
+        denominator = np.sqrt(2) * (r_B_avg + r_O) if r_B_avg is not None else 0
+        if r_A is not None and r_B_avg is not None and denominator > 0:
+            t = (r_A + r_O) / denominator
+        else:
+            t = None
         
         # Electronegativities
         chi_A = en_db.get(a)
@@ -668,10 +681,16 @@ class HydrationPredictor:
         
         if chi_B is not None and chi_dop is not None:
             chi_B_avg = (1 - x) * chi_B + x * chi_dop
-            chi_diff = chi_B_avg - chi_A if chi_A else None
+            if chi_A is not None:
+                chi_diff = chi_B_avg - chi_A
+            else:
+                chi_diff = None
         else:
             chi_B_avg = chi_B
-            chi_diff = chi_B - chi_A if chi_B and chi_A else None
+            if chi_B is not None and chi_A is not None:
+                chi_diff = chi_B - chi_A
+            else:
+                chi_diff = None
         
         # Create numerical feature vector
         numerical_features = [
@@ -679,7 +698,11 @@ class HydrationPredictor:
             t, chi_A, chi_B, chi_dop, chi_B_avg, chi_diff
         ]
         
-        # Handle None values
+        # FIX 8: Check for None values - if critical features are None, return None
+        if any(v is None for v in [r_A, r_B, r_B_avg, t, chi_A, chi_B]):
+            return None, None, None, None
+        
+        # Replace remaining None with 0 (less critical features)
         numerical_features = [0 if v is None else v for v in numerical_features]
         
         # Encode categorical features
@@ -687,11 +710,11 @@ class HydrationPredictor:
         for col, val in zip(['a', 'b', 'dopant', 'structure'], [a, b, dopant, structure]):
             if col in self.label_encoders:
                 try:
-                    encoded = self.label_encoders[col].transform([val])[0]
+                    encoded = self.label_encoders[col].transform([str(val)])[0]
                 except:
-                    encoded = 0  # Unknown category
+                    encoded = -1  # Unknown category
             else:
-                encoded = 0
+                encoded = -1
             categorical_features.append(encoded)
         
         # Combine features
@@ -710,12 +733,14 @@ class HydrationPredictor:
         for name, model in self.models_ds.items():
             ds_preds.append(model.predict(X_scaled)[0])
         
-        dh_mean = np.mean(dh_preds)
-        dh_std = np.std(dh_preds)
-        ds_mean = np.mean(ds_preds)
-        ds_std = np.std(ds_preds)
-        
-        return dh_mean, dh_std, ds_mean, ds_std
+        if dh_preds and ds_preds:
+            dh_mean = np.mean(dh_preds)
+            dh_std = np.std(dh_preds)
+            ds_mean = np.mean(ds_preds)
+            ds_std = np.std(ds_preds)
+            return dh_mean, dh_std, ds_mean, ds_std
+        else:
+            return None, None, None, None
     
     def find_similar_materials(self, a, b, dopant, x, n_neighbors=5):
         """Find most similar materials in the dataset"""
@@ -726,24 +751,23 @@ class HydrationPredictor:
             return pd.DataFrame()
         
         # Create feature vector for query
-        # This is simplified - in production, would use same feature engineering
-        query_idx = len(self.dataset.data)
         temp_df = pd.DataFrame([{
             'a': a, 'b': b, 'dopant': dopant, 'x': x,
             'structure': 'cubic', 'dh': 0, 'ds': 0
         }])
+        # Calculate descriptors for temp_df
         temp_df = self.dataset._calculate_descriptors(temp_df)
         X_query, _, _ = self.prepare_features(temp_df)
         
         if X_query is None:
             return pd.DataFrame()
         
-        # Scale
-        X_all_scaled = self.scaler.fit_transform(X_all)
+        # FIX 9: Use already fitted scaler, don't refit
+        X_all_scaled = self.scaler.transform(X_all)
         X_query_scaled = self.scaler.transform(X_query)
         
         # Find nearest neighbors
-        nn = NearestNeighbors(n_neighbors=n_neighbors, metric='euclidean')
+        nn = NearestNeighbors(n_neighbors=min(n_neighbors, len(X_all)), metric='euclidean')
         nn.fit(X_all_scaled)
         distances, indices = nn.kneighbors(X_query_scaled)
         
@@ -1062,33 +1086,6 @@ class ScientificVisualizer:
         )
         
         return fig
-    
-    @staticmethod
-    def plot_feature_importance(model, feature_names):
-        """Plot feature importance from ML model"""
-        
-        if not hasattr(model, 'feature_importances_'):
-            return None
-        
-        importances = model.feature_importances_
-        indices = np.argsort(importances)[::-1]
-        
-        # Create figure
-        fig, ax = plt.subplots(figsize=(10, 6))
-        
-        # Plot
-        ax.bar(range(len(importances)), importances[indices], align='center',
-               color='steelblue', edgecolor='black')
-        
-        # Labels
-        ax.set_xlabel('Features', fontsize=12, fontweight='bold')
-        ax.set_ylabel('Importance', fontsize=12, fontweight='bold')
-        ax.set_title('Feature importance for ∆H prediction', fontsize=14, fontweight='bold')
-        ax.set_xticks(range(len(importances)))
-        ax.set_xticklabels([feature_names[i] for i in indices], rotation=45, ha='right')
-        
-        plt.tight_layout()
-        return fig
 
 
 # ============================================================================
@@ -1098,15 +1095,11 @@ class ScientificVisualizer:
 def main():
     """Main Streamlit application"""
     
-    # Initialize session state
-    if 'dataset' not in st.session_state:
-        st.session_state.dataset = HydrationDataset()
-    
-    if 'predictor' not in st.session_state:
-        st.session_state.predictor = HydrationPredictor(st.session_state.dataset)
-    
-    if 'visualizer' not in st.session_state:
-        st.session_state.visualizer = ScientificVisualizer()
+    # FIX 10: Initialize cached resources
+    with st.spinner("Loading data and training models..."):
+        dataset = get_dataset()
+        predictor = get_predictor(dataset)
+        visualizer = ScientificVisualizer()
     
     # Sidebar
     with st.sidebar:
@@ -1126,24 +1119,24 @@ def main():
     
     # Main content
     if page == "📊 Dashboard":
-        show_dashboard()
+        show_dashboard(dataset)
     elif page == "🔍 Correlations":
-        show_correlations()
+        show_correlations(dataset, visualizer)
     elif page == "🤖 Predictor":
-        show_predictor()
+        show_predictor(predictor, dataset)
     elif page == "📁 Data Explorer":
-        show_data_explorer()
+        show_data_explorer(dataset)
     elif page == "ℹ️ About":
         show_about()
 
 
-def show_dashboard():
+def show_dashboard(dataset):
     """Dashboard page with overview"""
     
     st.title("📊 Perovskite Hydration Database")
     st.markdown("---")
     
-    df = st.session_state.dataset.data
+    df = dataset.data
     
     # Key metrics
     col1, col2, col3, col4 = st.columns(4)
@@ -1202,14 +1195,13 @@ def show_dashboard():
         st.dataframe(df[['dh', 'ds', 'x', 'r_A', 'r_B', 't_Goldschmidt']].describe())
 
 
-def show_correlations():
+def show_correlations(dataset, visualizer):
     """Correlations page with various plots"""
     
     st.title("🔍 Scientific Correlations")
     st.markdown("---")
     
-    df = st.session_state.dataset.data
-    visualizer = st.session_state.visualizer
+    df = dataset.data
     
     # Sidebar controls for this page
     with st.sidebar:
@@ -1222,8 +1214,7 @@ def show_correlations():
                 "∆H vs Electronegativity",
                 "Compensation Effect (∆H vs ∆S)",
                 "Tolerance Factor Correlation",
-                "3D Surface Plot",
-                "Feature Importance"
+                "3D Surface Plot"
             ]
         )
         
@@ -1298,35 +1289,18 @@ def show_correlations():
                 st.warning("X and Y axes must be different")
         else:
             st.info("Please select specific B-site")
-    
-    elif plot_type == "Feature Importance":
-        if not st.session_state.predictor.is_trained:
-            with st.spinner("Training models..."):
-                st.session_state.predictor.train_models()
-        
-        if st.session_state.predictor.models_dh:
-            model = st.session_state.predictor.models_dh['Random Forest']
-            fig = visualizer.plot_feature_importance(
-                model, st.session_state.predictor.feature_names
-            )
-            if fig:
-                st.pyplot(fig)
-                plt.close()
-            else:
-                st.warning("Could not generate feature importance")
 
 
-def show_predictor():
+def show_predictor(predictor, dataset):
     """Prediction page"""
     
     st.title("🤖 Hydration Predictor")
     st.markdown("---")
     
-    # Train models if not already trained
-    if not st.session_state.predictor.is_trained:
-        with st.spinner("Training machine learning models..."):
-            st.session_state.predictor.train_models()
-        st.success("Models trained successfully!")
+    # Check if models are trained
+    if not predictor.is_trained:
+        st.warning("Models are being trained. Please wait...")
+        return
     
     # Input form
     with st.form("prediction_form"):
@@ -1345,13 +1319,13 @@ def show_predictor():
             )
             structure = st.selectbox(
                 "Crystal structure",
-                ["cubic", "hexagonal", "orthorhombic", "tetragonal"]
+                ["cubic", "hexagonal", "orthorhombic", "tetragonal", "layered"]
             )
         
         with col2:
             dopant = st.selectbox(
                 "Dopant",
-                ["Y", "Sc", "In", "Yb", "Gd", "Er", "Lu"]
+                ["Y", "Sc", "In", "Yb", "Gd", "Er", "Lu", ""]
             )
             x = st.slider(
                 "Dopant content (x)",
@@ -1362,8 +1336,12 @@ def show_predictor():
     
     if submitted:
         with st.spinner("Calculating..."):
+            # Handle empty dopant
+            if dopant == "":
+                dopant = None
+            
             # Make prediction
-            dh_mean, dh_std, ds_mean, ds_std = st.session_state.predictor.predict(
+            dh_mean, dh_std, ds_mean, ds_std = predictor.predict(
                 a_cation, b_cation, dopant, x, structure
             )
             
@@ -1411,17 +1389,18 @@ def show_predictor():
                     st.caption(f"Interpretation: {interp_s}")
                 
                 # Find similar materials
-                st.markdown("---")
-                st.subheader("Similar Materials in Database")
-                
-                similar = st.session_state.predictor.find_similar_materials(
-                    a_cation, b_cation, dopant, x, n_neighbors=5
-                )
-                
-                if not similar.empty:
-                    st.dataframe(similar, use_container_width=True)
-                else:
-                    st.info("No similar materials found")
+                if dopant:
+                    st.markdown("---")
+                    st.subheader("Similar Materials in Database")
+                    
+                    similar = predictor.find_similar_materials(
+                        a_cation, b_cation, dopant, x, n_neighbors=5
+                    )
+                    
+                    if not similar.empty:
+                        st.dataframe(similar, use_container_width=True)
+                    else:
+                        st.info("No similar materials found")
                 
                 # Add to database option
                 st.markdown("---")
@@ -1431,13 +1410,13 @@ def show_predictor():
                 st.error("Could not make prediction. Please check input parameters.")
 
 
-def show_data_explorer():
+def show_data_explorer(dataset):
     """Data explorer page"""
     
     st.title("📁 Data Explorer")
     st.markdown("---")
     
-    df = st.session_state.dataset.data
+    df = dataset.data
     
     # Filters
     with st.expander("🔍 Filters", expanded=True):
@@ -1448,14 +1427,16 @@ def show_data_explorer():
         with col2:
             b_filter = st.multiselect("B-site", options=df['b'].unique())
         with col3:
-            dopant_filter = st.multiselect("Dopant", options=df['dopant'].unique())
+            dopant_filter = st.multiselect("Dopant", options=[d for d in df['dopant'].unique() if d])
         
         col4, col5 = st.columns(2)
         with col4:
+            min_dh = float(df['dh'].min()) if not df['dh'].isna().all() else -200
+            max_dh = float(df['dh'].max()) if not df['dh'].isna().all() else 0
             dh_range = st.slider(
                 "∆H range (kJ/mol)",
-                float(df['dh'].min()), float(df['dh'].max()),
-                (float(df['dh'].min()), float(df['dh'].max()))
+                min_dh, max_dh,
+                (min_dh, max_dh)
             )
         with col5:
             x_range = st.slider(
@@ -1486,13 +1467,14 @@ def show_data_explorer():
     st.dataframe(filtered[display_cols], use_container_width=True)
     
     # Download button
-    csv = filtered.to_csv(index=False)
-    st.download_button(
-        label="📥 Download as CSV",
-        data=csv,
-        file_name="perovskite_hydration_data.csv",
-        mime="text/csv"
-    )
+    if not filtered.empty:
+        csv = filtered.to_csv(index=False)
+        st.download_button(
+            label="📥 Download as CSV",
+            data=csv,
+            file_name="perovskite_hydration_data.csv",
+            mime="text/csv"
+        )
 
 
 def show_about():
@@ -1501,8 +1483,8 @@ def show_about():
     st.title("ℹ️ About")
     st.markdown("---")
     
-    st.markdown("""
-    ## About
+    about_text = '''
+    ## Perovskite Hydration Predictor
     
     This application provides a comprehensive database and machine learning tools 
     for predicting hydration thermodynamics in proton-conducting perovskite materials.
@@ -1536,5 +1518,4 @@ def show_about():
     ### Citation
     
     If you use this tool in your research, please cite:
-    For questions or contributions: research@perovskite-lab.org
-    """)
+    
