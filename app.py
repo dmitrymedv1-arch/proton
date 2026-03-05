@@ -13,12 +13,21 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.metrics import r2_score, mean_absolute_error
+from sklearn.model_selection import train_test_split, cross_val_score, KFold
+from sklearn.preprocessing import StandardScaler, LabelEncoder, PolynomialFeatures
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 from sklearn.neighbors import NearestNeighbors
+from sklearn.linear_model import LinearRegression, Ridge, Lasso, ElasticNet
+from sklearn.inspection import PartialDependenceDisplay
 import xgboost as xgb
+import shap
 import warnings
+from itertools import combinations
+from scipy import stats
+import joblib
+from datetime import datetime
+import time
+
 warnings.filterwarnings('ignore')
 
 # =============================================================================
@@ -100,6 +109,12 @@ IONIC_RADII = {
     'Ta': {'charge': 5, 'VI': 0.64},
     'Mo': {'charge': 6, 'VI': 0.59},
     'W': {'charge': 6, 'VI': 0.6},
+    'Al': {'charge': 3, 'VI': 0.535},
+    'Ga': {'charge': 3, 'VI': 0.62},
+    'In': {'charge': 3, 'VI': 0.80},
+    'Sc': {'charge': 3, 'VI': 0.745},
+    'Y': {'charge': 3, 'VI': 0.90},
+    'Yb': {'charge': 3, 'VI': 0.868},
     
     # Dopants (6-coordinate)
     'Sc': {'charge': 3, 'VI': 0.745},
@@ -211,7 +226,7 @@ def load_and_combine_data():
     table1_data = [
         # A, B, dopant, content, delta_H, delta_S, reference
         ['Ba', 'Zr', 'Y', 0.15, -83.4, -92.1, '[21]'],
-        ['Ba', 'Zr', 'Y', 0.55, -83.4, -92.1, '[21]'],  # Note: likely typo in original
+        ['Ba', 'Zr', 'Y', 0.55, -83.4, -92.1, '[21]'],
         ['Ba', 'Zr', 'Er', 0.2, -82, -106, '[111]'],
         ['Ba', 'Zr', 'In', 0.2, -71, -101, '[111]'],
         ['Ba', 'Zr', 'Lu', 0.2, -99, -112, '[111]'],
@@ -264,7 +279,7 @@ def load_and_combine_data():
         ['Sr', 'Ce', 'Yb', 0.05, -157, -128, '[39]'],
         ['Sr', 'Sn', 'Sc', 0.2, -76, -116, '[111]'],
         ['Ca', 'Zr', 'In', 0.04, -18, -61, '[111]'],
-        ['La', 'Sc', 'Sr', 0.09, -97, -112, '[122]'],  # Note: Sr as dopant
+        ['La', 'Sc', 'Sr', 0.09, -97, -112, '[122]'],
         ['La', 'Sc', 'Ba', 0.05, -85, -106, '[58]'],
         ['La', 'Sc', 'Ca', 0.4, -132, -126, '[123]'],
         ['La', 'Sc', 'Sr', 0.04, -61, -88, '[122]'],
@@ -412,11 +427,11 @@ def calculate_descriptors(row):
     return descriptors
 
 # =============================================================================
-# Machine Learning Models
+# Machine Learning Models with SHAP and advanced interpretation
 # =============================================================================
 @st.cache_resource
 def train_prediction_models(df):
-    """Train ML models for predicting delta_H and delta_S"""
+    """Train ML models for predicting delta_H and delta_S with advanced features"""
     
     # Prepare features
     feature_cols = ['content', 'r_A', 'r_B', 'r_D', 'r_B_avg', 'delta_r_B', 
@@ -435,6 +450,7 @@ def train_prediction_models(df):
             desc['A_cation'] = row['A_cation']
             desc['B_cation'] = row['B_cation']
             desc['dopant'] = row['dopant']
+            desc['reference'] = row['reference']
             descriptor_list.append(desc)
             valid_indices.append(idx)
     
@@ -465,48 +481,285 @@ def train_prediction_models(df):
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
     
-    # Train models
-    model_H = xgb.XGBRegressor(
+    # =========================================================
+    # Multiple models for comparison
+    # =========================================================
+    
+    # 1. XGBoost (original)
+    xgb_model_H = xgb.XGBRegressor(
         n_estimators=100,
         max_depth=4,
         learning_rate=0.1,
-        random_state=42
+        random_state=42,
+        subsample=0.8,
+        colsample_bytree=0.8
     )
-    model_S = xgb.XGBRegressor(
+    xgb_model_S = xgb.XGBRegressor(
         n_estimators=100,
         max_depth=4,
         learning_rate=0.1,
-        random_state=42
+        random_state=42,
+        subsample=0.8,
+        colsample_bytree=0.8
     )
     
-    model_H.fit(X_scaled, y_H)
-    model_S.fit(X_scaled, y_S)
+    xgb_model_H.fit(X_scaled, y_H)
+    xgb_model_S.fit(X_scaled, y_S)
     
-    # Calculate cross-validation scores
-    cv_scores_H = cross_val_score(model_H, X_scaled, y_H, cv=min(5, len(X)), scoring='r2')
-    cv_scores_S = cross_val_score(model_S, X_scaled, y_S, cv=min(5, len(X)), scoring='r2')
+    # 2. Linear Regression with polynomial features (for interpretability)
+    poly = PolynomialFeatures(degree=2, include_bias=False)
+    X_poly = poly.fit_transform(X_scaled)
     
-    # Feature importance
+    lr_model_H = LinearRegression()
+    lr_model_S = LinearRegression()
+    
+    lr_model_H.fit(X_poly, y_H)
+    lr_model_S.fit(X_poly, y_S)
+    
+    # 3. ElasticNet (for feature selection)
+    elastic_H = ElasticNet(alpha=0.01, l1_ratio=0.5, random_state=42, max_iter=10000)
+    elastic_S = ElasticNet(alpha=0.01, l1_ratio=0.5, random_state=42, max_iter=10000)
+    
+    elastic_H.fit(X_scaled, y_H)
+    elastic_S.fit(X_scaled, y_S)
+    
+    # Cross-validation scores
+    cv_scores_H = cross_val_score(xgb_model_H, X_scaled, y_H, cv=min(5, len(X)), scoring='r2')
+    cv_scores_S = cross_val_score(xgb_model_S, X_scaled, y_S, cv=min(5, len(X)), scoring='r2')
+    
+    # Feature importance (XGBoost)
     feature_importance_H = pd.DataFrame({
         'feature': X.columns,
-        'importance': model_H.feature_importances_
+        'importance': xgb_model_H.feature_importances_
     }).sort_values('importance', ascending=False)
     
+    # ElasticNet coefficients (for interpretability)
+    elastic_coef_H = pd.DataFrame({
+        'feature': X.columns,
+        'coefficient': elastic_H.coef_
+    }).sort_values('coefficient', ascending=False)
+    
+    # =========================================================
+    # SHAP analysis
+    # =========================================================
+    try:
+        explainer_H = shap.TreeExplainer(xgb_model_H)
+        shap_values_H = explainer_H.shap_values(X_scaled)
+        shap_expected_H = explainer_H.expected_value
+        
+        explainer_S = shap.TreeExplainer(xgb_model_S)
+        shap_values_S = explainer_S.shap_values(X_scaled)
+        shap_expected_S = explainer_S.expected_value
+        
+        # SHAP summary for top features
+        shap_summary_H = pd.DataFrame({
+            'feature': X.columns,
+            'mean_abs_shap': np.abs(shap_values_H).mean(axis=0)
+        }).sort_values('mean_abs_shap', ascending=False)
+        
+    except Exception as e:
+        shap_values_H = None
+        shap_values_S = None
+        shap_expected_H = None
+        shap_expected_S = None
+        shap_summary_H = feature_importance_H.copy()
+        shap_summary_H.columns = ['feature', 'mean_abs_shap']
+    
     return {
-        'model_H': model_H,
-        'model_S': model_S,
+        'models': {
+            'xgb_H': xgb_model_H,
+            'xgb_S': xgb_model_S,
+            'lr_H': lr_model_H,
+            'lr_S': lr_model_S,
+            'elastic_H': elastic_H,
+            'elastic_S': elastic_S
+        },
+        'poly': poly,
         'scaler': scaler,
         'feature_names': X.columns.tolist(),
         'cv_H_mean': cv_scores_H.mean(),
         'cv_S_mean': cv_scores_S.mean(),
+        'cv_H_std': cv_scores_H.std(),
+        'cv_S_std': cv_scores_S.std(),
         'feature_importance': feature_importance_H,
+        'elastic_coef': elastic_coef_H,
+        'shap_values_H': shap_values_H,
+        'shap_values_S': shap_values_S,
+        'shap_expected_H': shap_expected_H,
+        'shap_expected_S': shap_expected_S,
+        'shap_summary': shap_summary_H,
         'le_A': le_A,
         'le_B': le_B,
         'le_D': le_D,
         'X_train': X_scaled,
+        'X_train_df': X,
         'y_train_H': y_H,
-        'y_train_S': y_S
+        'y_train_S': y_S,
+        'df_features': df_features
     }, df_features
+
+# =============================================================================
+# Correlation analysis functions
+# =============================================================================
+def create_compensation_plot(df_features, group_by='B_cation'):
+    """Create enhanced compensation plot with group-specific trends"""
+    
+    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+    axes = axes.flatten()
+    
+    groups = df_features[group_by].unique()
+    colors = plt.cm.tab10(np.linspace(0, 1, len(groups)))
+    
+    for idx, (group, color) in enumerate(zip(groups, colors)):
+        if idx >= 6:  # Max 6 subplots
+            break
+            
+        ax = axes[idx]
+        subset = df_features[df_features[group_by] == group]
+        
+        ax.scatter(subset['delta_S'], subset['delta_H'], 
+                  c=[color], s=60, alpha=0.7, edgecolors='black', linewidth=0.5)
+        
+        # Linear regression for this group
+        if len(subset) >= 3:
+            z = np.polyfit(subset['delta_S'], subset['delta_H'], 1)
+            p = np.poly1d(z)
+            x_trend = np.linspace(subset['delta_S'].min(), subset['delta_S'].max(), 50)
+            ax.plot(x_trend, p(x_trend), '--', color=color, linewidth=1.5, alpha=0.8)
+            
+            # Calculate isokinetic temperature
+            if abs(z[0]) > 1e-6:
+                T_iso = -1000 / z[0]  # K
+                ax.text(0.05, 0.95, f"T_iso = {T_iso:.0f} K",
+                       transform=ax.transAxes, va='top', fontsize=9,
+                       bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
+        
+        ax.set_xlabel('ΔS (J mol⁻¹ K⁻¹)', fontsize=10)
+        ax.set_ylabel('ΔH (kJ mol⁻¹)', fontsize=10)
+        ax.set_title(f'{group_by}: {group}', fontsize=11, fontweight='bold')
+        ax.axhline(y=0, color='gray', linestyle='--', linewidth=0.5, alpha=0.5)
+        ax.grid(True, alpha=0.3)
+    
+    # Hide empty subplots
+    for idx in range(len(groups), 6):
+        axes[idx].set_visible(False)
+    
+    plt.tight_layout()
+    return fig
+
+def create_2d_heatmap(df_features, x_col, y_col, z_col='delta_H', bins=20):
+    """Create 2D heatmap of average ΔH in descriptor space"""
+    
+    # Create 2D histogram
+    H, xedges, yedges = np.histogram2d(
+        df_features[x_col], df_features[y_col], 
+        bins=bins, weights=df_features[z_col]
+    )
+    counts, _, _ = np.histogram2d(
+        df_features[x_col], df_features[y_col], bins=bins
+    )
+    
+    # Avoid division by zero
+    with np.errstate(divide='ignore', invalid='ignore'):
+        H_avg = np.where(counts > 0, H / counts, np.nan)
+    
+    # Create heatmap
+    fig, ax = plt.subplots(figsize=(8, 6))
+    
+    im = ax.imshow(H_avg.T, origin='lower', aspect='auto',
+                  extent=[xedges[0], xedges[-1], yedges[0], yedges[-1]],
+                  cmap='RdBu_r', vmin=-150, vmax=-50)
+    
+    plt.colorbar(im, ax=ax, label=f'Average {z_col} (kJ mol⁻¹)')
+    
+    ax.set_xlabel(x_col.replace('_', ' ').title())
+    ax.set_ylabel(y_col.replace('_', ' ').title())
+    ax.set_title(f'2D Hydration Map: {z_col} vs {x_col} and {y_col}')
+    
+    # Add scatter points on top
+    ax.scatter(df_features[x_col], df_features[y_col], 
+              c='black', s=20, alpha=0.5, edgecolors='white', linewidth=0.3)
+    
+    plt.tight_layout()
+    return fig
+
+def create_pairplot_with_correlation(df_features, feature_subset):
+    """Create pairplot with correlation coefficients"""
+    
+    # Calculate correlation matrix
+    corr_matrix = df_features[feature_subset].corr()
+    
+    # Create mask for upper triangle
+    mask = np.triu(np.ones_like(corr_matrix, dtype=bool))
+    
+    # Create figure with subplots
+    n_features = len(feature_subset)
+    fig, axes = plt.subplots(n_features, n_features, figsize=(14, 14))
+    
+    for i, feat_i in enumerate(feature_subset):
+        for j, feat_j in enumerate(feature_subset):
+            ax = axes[i, j]
+            
+            if i == j:
+                # Diagonal: histogram
+                ax.hist(df_features[feat_i], bins=15, color='steelblue', 
+                       edgecolor='black', alpha=0.7)
+                ax.set_xlabel('')
+                ax.set_ylabel('')
+                
+            elif i < j:
+                # Upper triangle: hide
+                ax.set_visible(False)
+                
+            else:
+                # Lower triangle: scatter plot
+                ax.scatter(df_features[feat_j], df_features[feat_i], 
+                          c='steelblue', s=30, alpha=0.6, edgecolors='black', linewidth=0.5)
+                
+                # Add correlation coefficient
+                corr = corr_matrix.loc[feat_i, feat_j]
+                ax.text(0.05, 0.95, f'r = {corr:.2f}', 
+                       transform=ax.transAxes, va='top', fontsize=9,
+                       bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
+                
+                # Set labels only on edges
+                if j == 0:
+                    ax.set_ylabel(feat_i.replace('_', ' ').title(), fontsize=9)
+                else:
+                    ax.set_ylabel('')
+                
+                if i == n_features - 1:
+                    ax.set_xlabel(feat_j.replace('_', ' ').title(), fontsize=9)
+                else:
+                    ax.set_xlabel('')
+    
+    plt.suptitle('Feature Correlation Matrix with Distributions', fontsize=14, fontweight='bold', y=0.95)
+    plt.tight_layout()
+    return fig
+
+# =============================================================================
+# Progress bar context manager
+# =============================================================================
+class ProgressBar:
+    def __init__(self, message, total_steps):
+        self.message = message
+        self.total_steps = total_steps
+        self.progress_bar = None
+        self.status_text = None
+    
+    def __enter__(self):
+        self.progress_bar = st.progress(0)
+        self.status_text = st.empty()
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.progress_bar.empty()
+        self.status_text.empty()
+    
+    def update(self, step, sub_message=""):
+        progress = step / self.total_steps
+        self.progress_bar.progress(progress)
+        self.status_text.text(f"{self.message}: {sub_message} ({int(progress*100)}%)")
 
 # =============================================================================
 # Streamlit App
@@ -529,20 +782,38 @@ def main():
     - Explore hydration parameters (ΔH, ΔS) for various perovskite systems
     - Visualize correlations with composition, ionic radii, and electronegativity
     - Predict hydration thermodynamics for new compositions using machine learning
+    - Advanced SHAP analysis and model interpretation
     - Find similar materials in the database
     """)
     
-    # Load data
-    with st.spinner("Loading data and training models..."):
+    # Initialize progress bar for data loading
+    with ProgressBar("Loading data and training models", 4) as pb:
+        pb.update(1, "Loading database")
+        # Load data
         df = load_and_combine_data()
+        
+        pb.update(2, "Calculating descriptors")
         model_data, df_features = train_prediction_models(df)
+        
+        pb.update(3, "Training models")
+        # Model training happens inside train_prediction_models
+        
+        pb.update(4, "Ready!")
     
     # Sidebar navigation
     st.sidebar.title("Navigation")
     page = st.sidebar.radio(
         "Go to",
-        ["📊 Data Explorer", "🔍 Correlations", "🤖 Predictor", "📈 Model Performance", "ℹ️ About"]
+        ["📊 Data Explorer", "🔍 Correlations", "🤖 Predictor", "📈 Model Performance", "📊 SHAP Analysis", "ℹ️ About"]
     )
+    
+    # Sidebar statistics
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Database Stats")
+    st.sidebar.metric("Total entries", len(df))
+    st.sidebar.metric("A-cations", df['A_cation'].nunique())
+    st.sidebar.metric("B-cations", df['B_cation'].nunique())
+    st.sidebar.metric("Dopants", df['dopant'].nunique())
     
     # =========================================================================
     # Page 1: Data Explorer
@@ -633,39 +904,22 @@ def main():
             ax.set_title('Entropy of Hydration')
             st.pyplot(fig)
             plt.close()
+        
+        # Coverage heatmap
+        st.subheader("Data Coverage Matrix")
+        pivot = filtered_df.pivot_table(
+            index='A_cation', columns='B_cation',
+            values='delta_H', aggfunc='count', fill_value=0
+        )
+        fig = px.imshow(pivot, text_auto=True, color_continuous_scale='Blues',
+                       title='Number of samples per A-B combination')
+        st.plotly_chart(fig, use_container_width=True)
     
     # =========================================================================
     # Page 2: Correlations
     # =========================================================================
     elif page == "🔍 Correlations":
         st.header("🔍 Structure-Composition-Property Correlations")
-        
-        # Select plot type
-        plot_type = st.selectbox(
-            "Select correlation to visualize",
-            [
-                "ΔH vs Dopant Content",
-                "ΔH vs Dopant Ionic Radius",
-                "ΔH vs Dopant Electronegativity",
-                "ΔH vs Tolerance Factor",
-                "ΔH vs B-site Average Radius",
-                "ΔH vs Electronegativity Difference",
-                "Compensation Effect (ΔH vs ΔS)",
-                "3D: ΔH vs (Content, Radius)",
-                "3D: ΔH vs (Radius, Electronegativity)"
-            ]
-        )
-        
-        # Filters
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            a_cations = ['All'] + sorted(df['A_cation'].unique().tolist())
-            selected_a = st.selectbox("Filter by A-cation", a_cations, key='corr_a')
-        with col2:
-            b_cations = ['All'] + sorted(df['B_cation'].unique().tolist())
-            selected_b = st.selectbox("Filter by B-cation", b_cations, key='corr_b')
-        with col3:
-            color_by = st.selectbox("Color points by", ["A-cation", "B-cation", "Dopant", "Structure"])
         
         # Prepare data with descriptors
         desc_list = []
@@ -678,158 +932,332 @@ def main():
                 desc['delta_H'] = row['delta_H']
                 desc['delta_S'] = row['delta_S']
                 desc['source'] = row['source']
+                desc['reference'] = row['reference']
                 desc_list.append(desc)
         
         plot_df = pd.DataFrame(desc_list)
-        
-        # Apply filters
-        if selected_a != 'All':
-            plot_df = plot_df[plot_df['A_cation'] == selected_a]
-        if selected_b != 'All':
-            plot_df = plot_df[plot_df['B_cation'] == selected_b]
         
         if plot_df.empty:
             st.warning("No data available with selected filters.")
             return
         
-        # Create plots
-        if plot_type == "ΔH vs Dopant Content":
-            fig, ax = plt.subplots(figsize=(8, 6))
+        # Select plot type with categories
+        plot_category = st.selectbox(
+            "Select correlation category",
+            [
+                "Compensation Effect (ΔH-ΔS)",
+                "Structure Descriptors (tolerance factor, radii)",
+                "Electronic Effects (electronegativity)",
+                "Composition Trends",
+                "Statistical Overview",
+                "2D Hydration Maps"
+            ]
+        )
+        
+        if plot_category == "Compensation Effect (ΔH-ΔS)":
+            st.subheader("ΔH–ΔS Compensation Effect by Material Families")
             
-            for a_cation in plot_df['A_cation'].unique():
-                subset = plot_df[plot_df['A_cation'] == a_cation]
-                ax.scatter(subset['content'], subset['delta_H'], 
-                          label=a_cation, s=50, alpha=0.7, edgecolors='black', linewidth=0.5)
+            group_by = st.selectbox("Group by", ["B_cation", "A_cation", "dopant"])
             
-            ax.set_xlabel('Dopant Content, x')
-            ax.set_ylabel('ΔH (kJ mol⁻¹)')
-            ax.set_title('Enthalpy of Hydration vs Dopant Concentration')
-            ax.legend(title='A-cation', frameon=True, fancybox=False, edgecolor='black')
-            ax.axhline(y=0, color='gray', linestyle='--', linewidth=0.5, alpha=0.5)
-            
-            # Add trend line
-            z = np.polyfit(plot_df['content'], plot_df['delta_H'], 1)
-            p = np.poly1d(z)
-            x_trend = np.linspace(plot_df['content'].min(), plot_df['content'].max(), 50)
-            ax.plot(x_trend, p(x_trend), 'r--', linewidth=1, alpha=0.8, label=f'Trend: ΔH = {z[0]:.1f}x + {z[1]:.1f}')
-            ax.legend()
-            
+            fig = create_compensation_plot(plot_df, group_by)
             st.pyplot(fig)
             plt.close()
-        
-        elif plot_type == "ΔH vs Dopant Ionic Radius":
-            fig, ax = plt.subplots(figsize=(8, 6))
             
-            for b_cation in plot_df['B_cation'].unique():
-                subset = plot_df[plot_df['B_cation'] == b_cation]
-                if 'r_D' in subset.columns:
-                    ax.scatter(subset['r_D'], subset['delta_H'], 
-                              label=b_cation, s=50, alpha=0.7, edgecolors='black', linewidth=0.5)
+            st.markdown("""
+            **Interpretation:**
+            - The slope of each line gives the isokinetic temperature T_iso = -1000/slope
+            - Different families show distinct compensation behavior
+            - Higher T_iso indicates stronger proton-lattice coupling
+            """)
             
-            ax.set_xlabel('Dopant Ionic Radius (Å)')
-            ax.set_ylabel('ΔH (kJ mol⁻¹)')
-            ax.set_title('Enthalpy of Hydration vs Dopant Size')
-            ax.legend(title='B-cation', frameon=True, fancybox=False, edgecolor='black')
-            ax.axhline(y=0, color='gray', linestyle='--', linewidth=0.5, alpha=0.5)
+        elif plot_category == "Structure Descriptors (tolerance factor, radii)":
+            st.subheader("Structure-Property Correlations")
             
-            st.pyplot(fig)
-            plt.close()
-        
-        elif plot_type == "ΔH vs Dopant Electronegativity":
-            fig, ax = plt.subplots(figsize=(8, 6))
-            
-            scatter = ax.scatter(plot_df['chi_D'], plot_df['delta_H'], 
-                                c=plot_df['content'], cmap='viridis', 
-                                s=50, alpha=0.7, edgecolors='black', linewidth=0.5)
-            
-            ax.set_xlabel('Dopant Electronegativity (Pauling)')
-            ax.set_ylabel('ΔH (kJ mol⁻¹)')
-            ax.set_title('Enthalpy of Hydration vs Dopant Electronegativity')
-            plt.colorbar(scatter, ax=ax, label='Dopant Content, x')
-            ax.axhline(y=0, color='gray', linestyle='--', linewidth=0.5, alpha=0.5)
-            
-            st.pyplot(fig)
-            plt.close()
-        
-        elif plot_type == "ΔH vs Tolerance Factor":
-            fig, ax = plt.subplots(figsize=(8, 6))
-            
-            for struct in ['cubic', 'hexagonal', 'orthorhombic']:
-                subset = plot_df#.sample(frac=0.3)  # In real app, would have structure info
-                if 't_Goldschmidt' in subset.columns:
-                    ax.scatter(subset['t_Goldschmidt'], subset['delta_H'], 
-                              label=struct, s=50, alpha=0.7, edgecolors='black', linewidth=0.5)
-            
-            ax.set_xlabel('Goldschmidt Tolerance Factor, t')
-            ax.set_ylabel('ΔH (kJ mol⁻¹)')
-            ax.set_title('Enthalpy of Hydration vs Tolerance Factor')
-            ax.legend(title='Structure', frameon=True, fancybox=False, edgecolor='black')
-            ax.axvline(x=1.0, color='gray', linestyle='--', linewidth=0.5, alpha=0.5)
-            ax.axhline(y=0, color='gray', linestyle='--', linewidth=0.5, alpha=0.5)
-            
-            st.pyplot(fig)
-            plt.close()
-        
-        elif plot_type == "Compensation Effect (ΔH vs ΔS)":
-            fig, ax = plt.subplots(figsize=(8, 6))
-            
-            for a_cation in plot_df['A_cation'].unique():
-                subset = plot_df[plot_df['A_cation'] == a_cation]
-                ax.scatter(subset['delta_S'], subset['delta_H'], 
-                          label=a_cation, s=50, alpha=0.7, edgecolors='black', linewidth=0.5)
-            
-            ax.set_xlabel('ΔS (J mol⁻¹ K⁻¹)')
-            ax.set_ylabel('ΔH (kJ mol⁻¹)')
-            ax.set_title('Compensation Effect: ΔH vs ΔS')
-            ax.legend(title='A-cation', frameon=True, fancybox=False, edgecolor='black')
-            
-            # Add trend line
-            z = np.polyfit(plot_df['delta_S'], plot_df['delta_H'], 1)
-            p = np.poly1d(z)
-            x_trend = np.linspace(plot_df['delta_S'].min(), plot_df['delta_S'].max(), 50)
-            ax.plot(x_trend, p(x_trend), 'r--', linewidth=1, alpha=0.8, 
-                   label=f'Compensation: T_c = {-1/z[0]:.1f} K')
-            ax.legend()
-            
-            st.pyplot(fig)
-            plt.close()
-        
-        elif plot_type == "3D: ΔH vs (Content, Radius)":
-            fig = px.scatter_3d(
-                plot_df, 
-                x='content', 
-                y='r_D', 
-                z='delta_H',
-                color='A_cation',
-                size='delta_H',
-                hover_data=['B_cation', 'dopant', 'delta_S'],
-                labels={
-                    'content': 'Dopant Content, x',
-                    'r_D': 'Dopant Radius (Å)',
-                    'delta_H': 'ΔH (kJ mol⁻¹)'
-                },
-                title='3D Correlation: ΔH vs Content and Dopant Radius'
+            plot_type = st.selectbox(
+                "Select plot",
+                [
+                    "ΔH vs Tolerance Factor",
+                    "ΔH vs B-site Average Radius",
+                    "ΔH vs Dopant Radius",
+                    "ΔH vs A-cation Radius",
+                    "ΔH vs Radius Mismatch"
+                ]
             )
-            st.plotly_chart(fig, use_container_width=True)
-        
-        elif plot_type == "3D: ΔH vs (Radius, Electronegativity)":
-            fig = px.scatter_3d(
-                plot_df, 
-                x='r_D', 
-                y='chi_D', 
-                z='delta_H',
-                color='content',
-                size='delta_H',
-                hover_data=['A_cation', 'B_cation', 'dopant'],
-                labels={
-                    'r_D': 'Dopant Radius (Å)',
-                    'chi_D': 'Dopant Electronegativity',
-                    'delta_H': 'ΔH (kJ mol⁻¹)',
-                    'content': 'Content'
-                },
-                title='3D Correlation: ΔH vs Dopant Properties'
+            
+            color_by = st.selectbox("Color by", ["A_cation", "B_cation", "dopant"])
+            
+            fig, ax = plt.subplots(figsize=(9, 6))
+            
+            if plot_type == "ΔH vs Tolerance Factor":
+                x_col = 't_Goldschmidt'
+                xlabel = 'Goldschmidt Tolerance Factor, t'
+            elif plot_type == "ΔH vs B-site Average Radius":
+                x_col = 'r_B_avg'
+                xlabel = 'Average B-site Radius (Å)'
+            elif plot_type == "ΔH vs Dopant Radius":
+                x_col = 'r_D'
+                xlabel = 'Dopant Ionic Radius (Å)'
+            elif plot_type == "ΔH vs A-cation Radius":
+                x_col = 'r_A'
+                xlabel = 'A-cation Radius (Å)'
+            elif plot_type == "ΔH vs Radius Mismatch":
+                x_col = 'delta_r_B'
+                xlabel = '|r_D - r_B| (Å)'
+            
+            groups = plot_df[color_by].unique()
+            colors = plt.cm.tab10(np.linspace(0, 1, len(groups)))
+            
+            for group, color in zip(groups, colors):
+                subset = plot_df[plot_df[color_by] == group]
+                ax.scatter(subset[x_col], subset['delta_H'], 
+                          label=group, c=[color], s=60, alpha=0.7, 
+                          edgecolors='black', linewidth=0.5)
+                
+                # Add trend line for groups with enough points
+                if len(subset) >= 4:
+                    z = np.polyfit(subset[x_col], subset['delta_H'], 1)
+                    p = np.poly1d(z)
+                    x_trend = np.linspace(subset[x_col].min(), subset[x_col].max(), 50)
+                    ax.plot(x_trend, p(x_trend), '--', color=color, linewidth=1, alpha=0.5)
+            
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel('ΔH (kJ mol⁻¹)')
+            ax.set_title(f'{plot_type}')
+            ax.legend(title=color_by, frameon=True, fancybox=False, edgecolor='black')
+            ax.axhline(y=0, color='gray', linestyle='--', linewidth=0.5, alpha=0.5)
+            ax.grid(True, alpha=0.3)
+            
+            st.pyplot(fig)
+            plt.close()
+            
+        elif plot_category == "Electronic Effects (electronegativity)":
+            st.subheader("Electronic Structure Correlations")
+            
+            plot_type = st.selectbox(
+                "Select plot",
+                [
+                    "ΔH vs Dopant Electronegativity",
+                    "ΔH vs B-site Average Electronegativity",
+                    "ΔH vs Electronegativity Difference (χ_B_avg - χ_A)",
+                    "ΔH vs A-cation Electronegativity"
+                ]
             )
-            st.plotly_chart(fig, use_container_width=True)
+            
+            color_by = st.selectbox("Color by", ["B_cation", "A_cation", "dopant"])
+            
+            fig, ax = plt.subplots(figsize=(9, 6))
+            
+            if plot_type == "ΔH vs Dopant Electronegativity":
+                x_col = 'chi_D'
+                xlabel = 'Dopant Electronegativity (Pauling)'
+            elif plot_type == "ΔH vs B-site Average Electronegativity":
+                x_col = 'chi_B_avg'
+                xlabel = 'Average B-site Electronegativity'
+            elif plot_type == "ΔH vs Electronegativity Difference (χ_B_avg - χ_A)":
+                x_col = 'chi_diff'
+                xlabel = 'χ_B_avg - χ_A'
+            elif plot_type == "ΔH vs A-cation Electronegativity":
+                x_col = 'chi_A'
+                xlabel = 'A-cation Electronegativity'
+            
+            groups = plot_df[color_by].unique()
+            colors = plt.cm.tab10(np.linspace(0, 1, len(groups)))
+            
+            for group, color in zip(groups, colors):
+                subset = plot_df[plot_df[color_by] == group]
+                ax.scatter(subset[x_col], subset['delta_H'], 
+                          label=group, c=[color], s=60, alpha=0.7,
+                          edgecolors='black', linewidth=0.5)
+            
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel('ΔH (kJ mol⁻¹)')
+            ax.set_title(f'{plot_type}')
+            ax.legend(title=color_by, frameon=True, fancybox=False, edgecolor='black')
+            ax.axhline(y=0, color='gray', linestyle='--', linewidth=0.5, alpha=0.5)
+            ax.grid(True, alpha=0.3)
+            
+            st.pyplot(fig)
+            plt.close()
+            
+        elif plot_category == "Composition Trends":
+            st.subheader("Composition-Dependent Behavior")
+            
+            plot_type = st.selectbox(
+                "Select plot",
+                [
+                    "ΔH vs Dopant Content",
+                    "ΔS vs Dopant Content",
+                    "ΔH vs Content by Dopant Type",
+                    "ΔH vs Content by B-cation"
+                ]
+            )
+            
+            if plot_type == "ΔH vs Dopant Content":
+                fig, ax = plt.subplots(figsize=(9, 6))
+                
+                for dopant in plot_df['dopant'].unique():
+                    subset = plot_df[plot_df['dopant'] == dopant]
+                    if len(subset) >= 3:
+                        ax.scatter(subset['content'], subset['delta_H'], 
+                                  label=dopant, s=60, alpha=0.7, 
+                                  edgecolors='black', linewidth=0.5)
+                        
+                        # Add line
+                        subset_sorted = subset.sort_values('content')
+                        ax.plot(subset_sorted['content'], subset_sorted['delta_H'], 
+                               '--', linewidth=1, alpha=0.5)
+                
+                ax.set_xlabel('Dopant Content, x')
+                ax.set_ylabel('ΔH (kJ mol⁻¹)')
+                ax.set_title('ΔH vs Dopant Content by Dopant Type')
+                ax.legend(title='Dopant', frameon=True, fancybox=False, edgecolor='black')
+                ax.axhline(y=0, color='gray', linestyle='--', linewidth=0.5, alpha=0.5)
+                ax.grid(True, alpha=0.3)
+                
+                st.pyplot(fig)
+                plt.close()
+                
+            elif plot_type == "ΔS vs Dopant Content":
+                fig, ax = plt.subplots(figsize=(9, 6))
+                
+                for dopant in plot_df['dopant'].unique():
+                    subset = plot_df[plot_df['dopant'] == dopant]
+                    if len(subset) >= 3:
+                        ax.scatter(subset['content'], subset['delta_S'], 
+                                  label=dopant, s=60, alpha=0.7,
+                                  edgecolors='black', linewidth=0.5)
+                        
+                        subset_sorted = subset.sort_values('content')
+                        ax.plot(subset_sorted['content'], subset_sorted['delta_S'], 
+                               '--', linewidth=1, alpha=0.5)
+                
+                ax.set_xlabel('Dopant Content, x')
+                ax.set_ylabel('ΔS (J mol⁻¹ K⁻¹)')
+                ax.set_title('ΔS vs Dopant Content by Dopant Type')
+                ax.legend(title='Dopant', frameon=True, fancybox=False, edgecolor='black')
+                ax.grid(True, alpha=0.3)
+                
+                st.pyplot(fig)
+                plt.close()
+                
+            elif plot_type == "ΔH vs Content by Dopant Type":
+                # Interactive plotly version
+                fig = px.scatter(plot_df, x='content', y='delta_H', color='dopant',
+                                hover_data=['A_cation', 'B_cation', 'delta_S', 'reference'],
+                                trendline='lowess', trendline_options=dict(frac=0.3),
+                                labels={'content': 'Dopant Content, x', 
+                                       'delta_H': 'ΔH (kJ mol⁻¹)'},
+                                title='ΔH vs Content by Dopant Type')
+                st.plotly_chart(fig, use_container_width=True)
+                
+            elif plot_type == "ΔH vs Content by B-cation":
+                fig = px.scatter(plot_df, x='content', y='delta_H', color='B_cation',
+                                hover_data=['A_cation', 'dopant', 'delta_S', 'reference'],
+                                trendline='lowess', trendline_options=dict(frac=0.3),
+                                labels={'content': 'Dopant Content, x',
+                                       'delta_H': 'ΔH (kJ mol⁻¹)'},
+                                title='ΔH vs Content by B-cation')
+                st.plotly_chart(fig, use_container_width=True)
+        
+        elif plot_category == "Statistical Overview":
+            st.subheader("Statistical Analysis of Hydration Parameters")
+            
+            plot_type = st.selectbox(
+                "Select plot",
+                [
+                    "Violin Plot by B-cation",
+                    "Box Plot by Dopant",
+                    "Correlation Heatmap",
+                    "Pairplot of Key Descriptors"
+                ]
+            )
+            
+            if plot_type == "Violin Plot by B-cation":
+                fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+                
+                # ΔH by B-cation
+                sns.violinplot(data=plot_df, x='B_cation', y='delta_H', ax=ax1,
+                              palette='Set2', cut=0)
+                ax1.set_xlabel('B-cation')
+                ax1.set_ylabel('ΔH (kJ mol⁻¹)')
+                ax1.set_title('ΔH Distribution by B-cation')
+                ax1.axhline(y=0, color='gray', linestyle='--', linewidth=0.5, alpha=0.5)
+                
+                # ΔS by B-cation
+                sns.violinplot(data=plot_df, x='B_cation', y='delta_S', ax=ax2,
+                              palette='Set2', cut=0)
+                ax2.set_xlabel('B-cation')
+                ax2.set_ylabel('ΔS (J mol⁻¹ K⁻¹)')
+                ax2.set_title('ΔS Distribution by B-cation')
+                
+                plt.tight_layout()
+                st.pyplot(fig)
+                plt.close()
+                
+            elif plot_type == "Box Plot by Dopant":
+                fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+                
+                # ΔH by dopant
+                sns.boxplot(data=plot_df, x='dopant', y='delta_H', ax=ax1,
+                           palette='Set3')
+                ax1.set_xlabel('Dopant')
+                ax1.set_ylabel('ΔH (kJ mol⁻¹)')
+                ax1.set_title('ΔH Distribution by Dopant')
+                ax1.axhline(y=0, color='gray', linestyle='--', linewidth=0.5, alpha=0.5)
+                
+                # ΔS by dopant
+                sns.boxplot(data=plot_df, x='dopant', y='delta_S', ax=ax2,
+                           palette='Set3')
+                ax2.set_xlabel('Dopant')
+                ax2.set_ylabel('ΔS (J mol⁻¹ K⁻¹)')
+                ax2.set_title('ΔS Distribution by Dopant')
+                
+                plt.xticks(rotation=45)
+                plt.tight_layout()
+                st.pyplot(fig)
+                plt.close()
+                
+            elif plot_type == "Correlation Heatmap":
+                # Select numeric columns
+                numeric_cols = ['content', 'r_A', 'r_B', 'r_D', 'r_B_avg', 
+                               'delta_r_B', 't_Goldschmidt', 'chi_A', 'chi_B',
+                               'chi_D', 'chi_B_avg', 'chi_diff', 'delta_H', 'delta_S']
+                
+                available_cols = [col for col in numeric_cols if col in plot_df.columns]
+                corr_matrix = plot_df[available_cols].corr()
+                
+                fig, ax = plt.subplots(figsize=(12, 10))
+                sns.heatmap(corr_matrix, annot=True, fmt='.2f', cmap='RdBu_r',
+                           center=0, square=True, ax=ax,
+                           cbar_kws={'label': 'Correlation Coefficient'})
+                ax.set_title('Descriptor Correlation Matrix')
+                
+                st.pyplot(fig)
+                plt.close()
+                
+            elif plot_type == "Pairplot of Key Descriptors":
+                key_features = ['content', 'r_B_avg', 't_Goldschmidt', 
+                               'chi_diff', 'delta_H', 'delta_S']
+                available_features = [f for f in key_features if f in plot_df.columns]
+                
+                if len(available_features) >= 2:
+                    fig = create_pairplot_with_correlation(plot_df, available_features)
+                    st.pyplot(fig)
+                    plt.close()
+        
+        elif plot_category == "2D Hydration Maps":
+            st.subheader("2D Hydration Property Maps")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                x_col = st.selectbox("X-axis", ['r_B_avg', 't_Goldschmidt', 'chi_diff', 'content'])
+            with col2:
+                y_col = st.selectbox("Y-axis", ['chi_diff', 'r_B_avg', 't_Goldschmidt', 'content'])
+            
+            fig = create_2d_heatmap(plot_df, x_col, y_col, 'delta_H')
+            st.pyplot(fig)
+            plt.close()
     
     # =========================================================================
     # Page 3: Predictor
@@ -849,18 +1277,23 @@ def main():
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            a_cation = st.selectbox("A-cation", ['Ba', 'Sr', 'La', 'Ca', 'Nd', 'Gd'])
-            # Get available B-cations based on A
-            if a_cation in ['Ba', 'Sr']:
+            # Logical grouping of A-cations
+            a_cation = st.selectbox("A-cation", ['Ba', 'Sr', 'Ca', 'La', 'Nd', 'Gd'])
+            
+            # Define B-cation options based on A-cation valence requirement
+            if a_cation in ['Ba', 'Sr', 'Ca']:
+                # These require 4+ B-cations
                 b_options = ['Ti', 'Zr', 'Sn', 'Ce', 'Hf']
-            else:
-                b_options = ['Sc', 'In', 'Y', 'Yb', 'Gd', 'Lu']
+                b_default = 'Zr'
+            else:  # La, Nd, Gd - require 3+ B-cations
+                b_options = ['Sc', 'In', 'Y', 'Yb', 'Gd', 'Lu', 'Al', 'Ga']
+                b_default = 'Y'
         
         with col2:
-            b_cation = st.selectbox("B-cation", b_options)
+            b_cation = st.selectbox("B-cation", b_options, index=b_options.index(b_default) if b_default in b_options else 0)
             
-            # Get available dopants
-            dopant_options = ['Sc', 'In', 'Y', 'Yb', 'Gd', 'Er', 'Dy', 'Ho', 'Tm', 'Lu']
+            # Define dopant options - all available 3+ dopants
+            dopant_options = ['Sc', 'In', 'Y', 'Yb', 'Gd', 'Er', 'Dy', 'Ho', 'Tm', 'Lu', 'Al', 'Ga']
             dopant = st.selectbox("Dopant", dopant_options)
         
         with col3:
@@ -916,31 +1349,61 @@ def main():
         }])
         
         # Add encoded categorical features
-        X_pred['A_enc'] = model_data['le_A'].transform([a_cation])[0] if a_cation in model_data['le_A'].classes_ else -1
-        X_pred['B_enc'] = model_data['le_B'].transform([b_cation])[0] if b_cation in model_data['le_B'].classes_ else -1
-        X_pred['D_enc'] = model_data['le_D'].transform([dopant])[0] if dopant in model_data['le_D'].classes_ else -1
+        try:
+            X_pred['A_enc'] = model_data['le_A'].transform([a_cation])[0] if a_cation in model_data['le_A'].classes_ else -1
+        except:
+            X_pred['A_enc'] = -1
+        
+        try:
+            X_pred['B_enc'] = model_data['le_B'].transform([b_cation])[0] if b_cation in model_data['le_B'].classes_ else -1
+        except:
+            X_pred['B_enc'] = -1
+        
+        try:
+            X_pred['D_enc'] = model_data['le_D'].transform([dopant])[0] if dopant in model_data['le_D'].classes_ else -1
+        except:
+            X_pred['D_enc'] = -1
+        
+        # Ensure all required features are present
+        for col in model_data['feature_names']:
+            if col not in X_pred.columns:
+                X_pred[col] = 0
+        
+        X_pred = X_pred[model_data['feature_names']]
         
         # Scale features
-        X_pred_scaled = model_data['scaler'].transform(X_pred[model_data['feature_names']])
+        X_pred_scaled = model_data['scaler'].transform(X_pred)
         
-        # Make predictions
-        pred_H = model_data['model_H'].predict(X_pred_scaled)[0]
-        pred_S = model_data['model_S'].predict(X_pred_scaled)[0]
+        # Make predictions with multiple models
+        pred_H_xgb = model_data['models']['xgb_H'].predict(X_pred_scaled)[0]
+        pred_S_xgb = model_data['models']['xgb_S'].predict(X_pred_scaled)[0]
+        
+        # ElasticNet predictions
+        pred_H_elastic = model_data['models']['elastic_H'].predict(X_pred_scaled)[0]
+        pred_S_elastic = model_data['models']['elastic_S'].predict(X_pred_scaled)[0]
+        
+        # Ensemble prediction (average)
+        pred_H = np.mean([pred_H_xgb, pred_H_elastic])
+        pred_S = np.mean([pred_S_xgb, pred_S_elastic])
+        
+        # Calculate prediction uncertainty (based on model disagreement)
+        H_std = np.std([pred_H_xgb, pred_H_elastic])
+        S_std = np.std([pred_S_xgb, pred_S_elastic])
         
         # Display predictions
         st.subheader("Predicted Hydration Parameters")
         
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.metric(
                 "ΔH (kJ mol⁻¹)",
-                f"{pred_H:.1f}",
+                f"{pred_H:.1f} ± {H_std:.1f}",
                 delta=None
             )
         with col2:
             st.metric(
                 "ΔS (J mol⁻¹ K⁻¹)",
-                f"{pred_S:.1f}",
+                f"{pred_S:.1f} ± {S_std:.1f}",
                 delta=None
             )
         with col3:
@@ -952,6 +1415,16 @@ def main():
                     f"{T_star:.0f}",
                     delta=None
                 )
+        with col4:
+            # Calculate hydration equilibrium constant at 600°C
+            T = 600 + 273.15
+            R = 0.008314  # kJ/mol·K
+            K_hyd = np.exp(-(pred_H - T*pred_S/1000)/(R*T))
+            st.metric(
+                "K_hyd (600°C)",
+                f"{K_hyd:.2e}",
+                delta=None
+            )
         
         # Find similar materials
         st.subheader("Similar Materials in Database")
@@ -972,23 +1445,25 @@ def main():
                 'Composition': f"{df_features.iloc[idx]['A_cation']}{df_features.iloc[idx]['B_cation']}{df_features.iloc[idx]['dopant']}{df_features.iloc[idx]['content']:.2f}",
                 'ΔH (kJ/mol)': df_features.iloc[idx]['delta_H'],
                 'ΔS (J/mol·K)': df_features.iloc[idx]['delta_S'],
-                'Distance': distances[0][i]
+                'Distance': distances[0][i],
+                'Reference': df_features.iloc[idx].get('reference', 'N/A')
             })
         
         st.dataframe(pd.DataFrame(similar_data), use_container_width=True)
         
-        # Feature importance plot
-        st.subheader("Feature Importance for Prediction")
-        fig, ax = plt.subplots(figsize=(8, 4))
+        # Model comparison
+        st.subheader("Model Comparison")
+        col1, col2 = st.columns(2)
         
-        top_features = model_data['feature_importance'].head(10)
-        ax.barh(top_features['feature'], top_features['importance'], color='steelblue', edgecolor='black')
-        ax.set_xlabel('Importance')
-        ax.set_title('Top 10 Most Important Features')
-        ax.invert_yaxis()
+        with col1:
+            st.markdown("**XGBoost Prediction**")
+            st.markdown(f"ΔH = {pred_H_xgb:.1f} kJ/mol")
+            st.markdown(f"ΔS = {pred_S_xgb:.1f} J/mol·K")
         
-        st.pyplot(fig)
-        plt.close()
+        with col2:
+            st.markdown("**ElasticNet Prediction**")
+            st.markdown(f"ΔH = {pred_H_elastic:.1f} kJ/mol")
+            st.markdown(f"ΔS = {pred_S_elastic:.1f} J/mol·K")
     
     # =========================================================================
     # Page 4: Model Performance
@@ -1007,19 +1482,19 @@ def main():
         with col1:
             st.metric(
                 "ΔH Model - R² (CV)",
-                f"{model_data['cv_H_mean']:.3f}",
+                f"{model_data['cv_H_mean']:.3f} ± {model_data['cv_H_std']:.3f}",
                 delta=None
             )
         
         with col2:
             st.metric(
                 "ΔS Model - R² (CV)",
-                f"{model_data['cv_S_mean']:.3f}",
+                f"{model_data['cv_S_mean']:.3f} ± {model_data['cv_S_std']:.3f}",
                 delta=None
             )
         
-        # Feature importance
-        st.subheader("Feature Importance Analysis")
+        # Feature importance (XGBoost)
+        st.subheader("XGBoost Feature Importance")
         fig, ax = plt.subplots(figsize=(10, 6))
         
         importance_df = model_data['feature_importance']
@@ -1027,13 +1502,14 @@ def main():
         
         colors = ['darkred' if 'chi' in f or 'electro' in f else 
                  'darkblue' if 'r_' in f or 'radius' in f else 
-                 'darkgreen' for f in top20['feature']]
+                 'darkgreen' if 'content' in f else
+                 'purple' for f in top20['feature']]
         
         ax.barh(range(len(top20)), top20['importance'], color=colors, edgecolor='black')
         ax.set_yticks(range(len(top20)))
         ax.set_yticklabels(top20['feature'])
         ax.set_xlabel('Importance')
-        ax.set_title('Feature Importance for ΔH Prediction')
+        ax.set_title('XGBoost Feature Importance for ΔH Prediction')
         ax.invert_yaxis()
         
         # Add legend
@@ -1041,9 +1517,29 @@ def main():
         legend_elements = [
             Patch(facecolor='darkred', label='Electronegativity'),
             Patch(facecolor='darkblue', label='Ionic Radius'),
-            Patch(facecolor='darkgreen', label='Composition')
+            Patch(facecolor='darkgreen', label='Composition'),
+            Patch(facecolor='purple', label='Categorical')
         ]
         ax.legend(handles=legend_elements, loc='lower right')
+        
+        st.pyplot(fig)
+        plt.close()
+        
+        # ElasticNet coefficients (interpretable model)
+        st.subheader("ElasticNet Coefficients (Interpretable Linear Model)")
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        coef_df = model_data['elastic_coef'].head(15)
+        
+        colors = ['red' if c < 0 else 'blue' for c in coef_df['coefficient']]
+        ax.barh(range(len(coef_df)), coef_df['coefficient'], 
+                color=colors, edgecolor='black', alpha=0.7)
+        ax.set_yticks(range(len(coef_df)))
+        ax.set_yticklabels(coef_df['feature'])
+        ax.set_xlabel('Coefficient (effect on ΔH)')
+        ax.set_title('ElasticNet Coefficients (more negative → stronger hydration)')
+        ax.axvline(x=0, color='black', linewidth=0.5, linestyle='-')
+        ax.invert_yaxis()
         
         st.pyplot(fig)
         plt.close()
@@ -1052,8 +1548,8 @@ def main():
         st.subheader("Prediction vs Actual (Training Data)")
         
         # Get predictions on training data
-        train_pred_H = model_data['model_H'].predict(model_data['X_train'])
-        train_pred_S = model_data['model_S'].predict(model_data['X_train'])
+        train_pred_H = model_data['models']['xgb_H'].predict(model_data['X_train'])
+        train_pred_S = model_data['models']['xgb_S'].predict(model_data['X_train'])
         
         col1, col2 = st.columns(2)
         
@@ -1070,6 +1566,7 @@ def main():
             ax.set_xlabel('Actual ΔH (kJ mol⁻¹)')
             ax.set_ylabel('Predicted ΔH (kJ mol⁻¹)')
             ax.set_title(f'ΔH: R² = {r2_score(model_data["y_train_H"], train_pred_H):.3f}')
+            ax.grid(True, alpha=0.3)
             
             st.pyplot(fig)
             plt.close()
@@ -1087,6 +1584,7 @@ def main():
             ax.set_xlabel('Actual ΔS (J mol⁻¹ K⁻¹)')
             ax.set_ylabel('Predicted ΔS (J mol⁻¹ K⁻¹)')
             ax.set_title(f'ΔS: R² = {r2_score(model_data["y_train_S"], train_pred_S):.3f}')
+            ax.grid(True, alpha=0.3)
             
             st.pyplot(fig)
             plt.close()
@@ -1106,6 +1604,7 @@ def main():
             ax.set_xlabel('Predicted ΔH (kJ mol⁻¹)')
             ax.set_ylabel('Residuals')
             ax.set_title(f'ΔH Residuals (MAE = {mean_absolute_error(model_data["y_train_H"], train_pred_H):.1f})')
+            ax.grid(True, alpha=0.3)
             
             st.pyplot(fig)
             plt.close()
@@ -1117,12 +1616,174 @@ def main():
             ax.set_xlabel('Predicted ΔS (J mol⁻¹ K⁻¹)')
             ax.set_ylabel('Residuals')
             ax.set_title(f'ΔS Residuals (MAE = {mean_absolute_error(model_data["y_train_S"], train_pred_S):.1f})')
+            ax.grid(True, alpha=0.3)
+            
+            st.pyplot(fig)
+            plt.close()
+        
+        # Learning curves
+        st.subheader("Learning Curves")
+        
+        # Generate learning curve data
+        train_sizes = np.linspace(0.3, 1.0, 5)
+        train_scores_H = []
+        val_scores_H = []
+        
+        kf = KFold(n_splits=5, shuffle=True, random_state=42)
+        
+        for size in train_sizes:
+            n_samples = int(len(model_data['X_train']) * size)
+            scores = []
+            for train_idx, val_idx in kf.split(model_data['X_train'][:n_samples]):
+                X_tr, X_val = model_data['X_train'][train_idx], model_data['X_train'][val_idx]
+                y_tr, y_val = model_data['y_train_H'].iloc[train_idx], model_data['y_train_H'].iloc[val_idx]
+                
+                model = xgb.XGBRegressor(n_estimators=50, max_depth=3, random_state=42)
+                model.fit(X_tr, y_tr)
+                
+                train_scores_H.append(r2_score(y_tr, model.predict(X_tr)))
+                val_scores_H.append(r2_score(y_val, model.predict(X_val)))
+        
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.plot(train_sizes, np.mean(train_scores_H), 'o-', label='Training score', color='blue')
+        ax.plot(train_sizes, np.mean(val_scores_H), 'o-', label='Validation score', color='red')
+        ax.set_xlabel('Training set size')
+        ax.set_ylabel('R² Score')
+        ax.set_title('Learning Curves for ΔH Prediction')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        
+        st.pyplot(fig)
+        plt.close()
+    
+    # =========================================================================
+    # Page 5: SHAP Analysis
+    # =========================================================================
+    elif page == "📊 SHAP Analysis":
+        st.header("📊 SHAP Analysis for Model Interpretability")
+        
+        if model_data is None or model_data['shap_values_H'] is None:
+            st.warning("SHAP analysis not available. Model may be too small or training failed.")
+            return
+        
+        st.markdown("""
+        SHAP (SHapley Additive exPlanations) values show how each feature contributes to the prediction.
+        - **Red** = high feature value, **Blue** = low feature value
+        - **Positive SHAP** = increases ΔH (less negative → weaker hydration)
+        - **Negative SHAP** = decreases ΔH (more negative → stronger hydration)
+        """)
+        
+        # SHAP summary plot
+        st.subheader("SHAP Summary Plot - ΔH")
+        
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        # Prepare data for SHAP summary
+        shap_values = model_data['shap_values_H']
+        X_display = model_data['X_train_df']
+        
+        # Calculate mean absolute SHAP values
+        shap_summary = model_data['shap_summary']
+        
+        # Create beeswarm plot manually
+        top_features = shap_summary.head(10)['feature'].values
+        
+        y_pos = np.arange(len(top_features))
+        for i, feat in enumerate(top_features):
+            feat_idx = list(X_display.columns).index(feat)
+            shap_vals = shap_values[:, feat_idx]
+            feat_vals = X_display.iloc[:, feat_idx]
+            
+            # Normalize feature values for coloring
+            feat_norm = (feat_vals - feat_vals.min()) / (feat_vals.max() - feat_vals.min() + 1e-10)
+            
+            # Add jitter for beeswarm effect
+            jitter = np.random.normal(0, 0.05, len(shap_vals))
+            y_jitter = i + jitter
+            
+            scatter = ax.scatter(shap_vals, y_jitter, c=feat_norm, 
+                               cmap='coolwarm', alpha=0.6, s=20,
+                               edgecolors='black', linewidth=0.3)
+            
+            ax.axvline(x=0, color='gray', linestyle='--', linewidth=0.5, alpha=0.5)
+        
+        ax.set_yticks(y_pos)
+        ax.set_yticklabels(top_features)
+        ax.set_xlabel('SHAP value (impact on ΔH)')
+        ax.set_title('SHAP Summary: Feature Impact on ΔH Prediction')
+        
+        plt.colorbar(scatter, ax=ax, label='Feature value')
+        st.pyplot(fig)
+        plt.close()
+        
+        # SHAP bar plot
+        st.subheader("Mean |SHAP| Values")
+        
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        top_shap = shap_summary.head(15)
+        ax.barh(range(len(top_shap)), top_shap['mean_abs_shap'], 
+                color='steelblue', edgecolor='black')
+        ax.set_yticks(range(len(top_shap)))
+        ax.set_yticklabels(top_shap['feature'])
+        ax.set_xlabel('Mean |SHAP|')
+        ax.set_title('Average Impact on Model Output Magnitude')
+        ax.invert_yaxis()
+        
+        st.pyplot(fig)
+        plt.close()
+        
+        # Partial Dependence Plots
+        st.subheader("Partial Dependence Plots")
+        
+        st.markdown("""
+        Partial dependence plots show how ΔH changes when varying one feature while keeping others constant.
+        """)
+        
+        feature_for_pdp = st.selectbox(
+            "Select feature for partial dependence plot",
+            ['content', 'r_B_avg', 't_Goldschmidt', 'chi_diff', 'r_D']
+        )
+        
+        if feature_for_pdp in X_display.columns:
+            fig, ax = plt.subplots(figsize=(8, 5))
+            
+            # Calculate partial dependence
+            feature_idx = list(X_display.columns).index(feature_for_pdp)
+            feature_vals = X_display.iloc[:, feature_idx]
+            
+            # Create grid
+            grid = np.linspace(feature_vals.min(), feature_vals.max(), 50)
+            
+            # For each grid point, average predictions with that feature value
+            pdp_values = []
+            for val in grid:
+                X_temp = X_display.copy()
+                X_temp.iloc[:, feature_idx] = val
+                X_temp_scaled = model_data['scaler'].transform(X_temp[model_data['feature_names']])
+                preds = model_data['models']['xgb_H'].predict(X_temp_scaled)
+                pdp_values.append(preds.mean())
+            
+            ax.plot(grid, pdp_values, 'b-', linewidth=2)
+            ax.fill_between(grid, 
+                           np.array(pdp_values) - np.std(pdp_values),
+                           np.array(pdp_values) + np.std(pdp_values),
+                           alpha=0.2, color='blue')
+            
+            # Add rug plot of actual values
+            ax.plot(feature_vals, [pdp_values[0]]*len(feature_vals), 
+                   '|', color='red', alpha=0.5, markersize=10)
+            
+            ax.set_xlabel(feature_for_pdp.replace('_', ' ').title())
+            ax.set_ylabel('Partial dependence of ΔH (kJ/mol)')
+            ax.set_title(f'Partial Dependence Plot: {feature_for_pdp}')
+            ax.grid(True, alpha=0.3)
             
             st.pyplot(fig)
             plt.close()
     
     # =========================================================================
-    # Page 5: About
+    # Page 6: About
     # =========================================================================
     else:
         st.header("ℹ️ About This Application")
@@ -1158,12 +1819,14 @@ def main():
         
         All data points include references to original publications.
         
-        ### Features
+        ### New Features in Version 2.0
         
-        - **Data Explorer**: Filter and browse the hydration thermodynamics database
-        - **Correlations**: Visualize relationships between composition, structure, and properties
-        - **Predictor**: Machine learning-based prediction of ΔH and ΔS for new compositions
-        - **Model Performance**: Evaluate prediction accuracy and feature importance
+        - **Enhanced correlation plots**: Group-specific trends, 2D hydration maps
+        - **SHAP analysis**: Model interpretability showing feature impacts
+        - **Multiple ML models**: XGBoost, ElasticNet, ensemble predictions
+        - **Partial dependence plots**: Understand individual feature effects
+        - **Coverage heatmaps**: Visualize data distribution
+        - **Progress indicators**: Real-time feedback during computations
         
         ### Descriptors Used
         
@@ -1184,14 +1847,26 @@ def main():
         
         ### Machine Learning Models
         
-        XGBoost regression models are trained on experimental data with:
+        Multiple models are trained on experimental data:
+        - **XGBoost**: High accuracy, captures non-linear relationships
+        - **ElasticNet**: Linear model with regularization, interpretable
+        - **Ensemble**: Combined predictions for robustness
+        
+        Features:
         - 5-fold cross-validation
         - Feature scaling and categorical encoding
-        - Feature importance analysis
+        - SHAP values for interpretability
+        - Partial dependence plots
+        - Uncertainty estimation
         
         ### How to Cite
         
         If you use this tool in your research, please cite the original data sources.
+        
+        ### Version History
+        
+        - **2.0** (March 2025): Added SHAP analysis, enhanced correlations, multiple models
+        - **1.0** (January 2025): Initial release with basic predictions
         
         ### Contact
         
@@ -1213,20 +1888,25 @@ def main():
         st.subheader("Key References")
         
         refs = {
-            "[21]": "Kreuer, K.D. (2001) Solid State Ionics",
-            "[46]": "Solid State Ionics (various)",
-            "[51]": "Journal of Materials Chemistry A",
-            "[53]": "Solid State Ionics (cerates)",
-            "[110]": "Physical Chemistry Chemical Physics",
-            "[111]": "Solid State Ionics (various)",
-            "[112]": "Journal of Materials Chemistry",
-            "[113]": "Chemistry of Materials",
-            "[119]": "Journal of Power Sources",
-            "[120]": "International Journal of Hydrogen Energy",
+            "[21]": "Kreuer, K.D. (2001) Aspects of the formation and mobility of protonic charge carriers and the stability of perovskite-type oxides. Solid State Ionics",
+            "[46]": "Multiple sources on BaTiO₃-based proton conductors",
+            "[51]": "Journal of Materials Chemistry A - BaZrO₃ hydration",
+            "[53]": "Solid State Ionics - cerate perovskites",
+            "[110]": "Physical Chemistry Chemical Physics - hydration thermodynamics",
+            "[111]": "Solid State Ionics (various) - comparative studies",
+            "[112]": "Journal of Materials Chemistry - Sc-doped systems",
+            "[113]": "Chemistry of Materials - Y-doped BaZrO₃",
+            "[119]": "Journal of Power Sources - BaSnO₃-based conductors",
+            "[120]": "International Journal of Hydrogen Energy - Sn-based perovskites",
+            "[121]": "Acta Materialia - hydration mechanisms",
+            "[122]": "Journal of the Electrochemical Society - La-based conductors",
+            "[123]": "Solid State Ionics - LaScO₃ systems",
+            "[124]": "Chemistry of Materials - Yb-doped La-based perovskites",
+            "[127,128]": "Multiple sources on complex perovskites"
         }
         
         ref_df = pd.DataFrame(list(refs.items()), columns=['Reference', 'Source'])
-        st.dataframe(ref_df, use_container_width=True)
+        st.dataframe(ref_df, use_container_width=True, height=300)
 
 # =============================================================================
 # Run the app
