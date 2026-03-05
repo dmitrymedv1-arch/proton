@@ -11,5 +11,6 @@ openpyxl
 pandas-profiling
 joblib
 xgboost
-snap
+shap
+
 
