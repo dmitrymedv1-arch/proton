@@ -1536,4 +1536,5 @@ def show_about():
     ### Citation
     
     If you use this tool in your research, please cite:
-    
+    For questions or contributions: research@perovskite-lab.org
+    """)
