@@ -9,4 +9,7 @@ scipy
 xlsxwriter
 openpyxl
 xgboost
-
+shap
+pandas-profiling
+sweetviz
+joblib
