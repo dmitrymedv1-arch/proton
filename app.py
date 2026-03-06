@@ -4590,7 +4590,7 @@ def main():
             for i, feat in enumerate(top_features):
                 feat_idx = list(feature_names).index(feat)
                 shap_vals = shap_values[:, feat_idx]
-                feat_vals = X_display.iloc[:, feat_idx]
+                feat_vals = X_display.iloc[:, feat_idx].values
                 
                 # Normalize feature values for coloring
                 if feat_vals.max() > feat_vals.min():
@@ -4601,10 +4601,9 @@ def main():
                 # Убеждаемся, что feat_norm - одномерный массив правильной длины
                 feat_norm = np.array(feat_norm).flatten()
                 
-                # Проверяем соответствие размеров
-                if len(feat_norm) != len(shap_vals):
-                    # Если размеры не совпадают, используем повторение или обрезаем
-                    feat_norm = np.resize(feat_norm, len(shap_vals))
+                # Add jitter for beeswarm effect (ОПРЕДЕЛЯЕМ ПЕРЕД ИСПОЛЬЗОВАНИЕМ)
+                jitter = np.random.normal(0, 0.05, len(shap_vals))
+                y_jitter = i + jitter
                 
                 scatter = ax.scatter(shap_vals, y_jitter, c=feat_norm, 
                                    cmap='coolwarm', alpha=0.6, s=30,
@@ -4620,7 +4619,7 @@ def main():
                         fontsize=14, fontweight='bold')
             ax.grid(True, alpha=0.3, axis='x')
             
-            plt.colorbar(scatter, ax=ax, label='Feature value')
+            plt.colorbar(scatter, ax=ax, label='Feature value (normalized)')
             st.pyplot(fig)
             plt.close()
         
@@ -5485,6 +5484,7 @@ def main():
 # =============================================================================
 if __name__ == "__main__":
     main()
+
 
 
 
