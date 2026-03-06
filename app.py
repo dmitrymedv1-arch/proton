@@ -2256,9 +2256,9 @@ def main():
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    # =========================================================================
-    # Page 2: Advanced Correlations
-    # =========================================================================
+    # =============================================================================
+    # Page 2: Advanced Correlations (исправленная и дополненная версия)
+    # =============================================================================
     elif page == "🔍 Advanced Correlations":
         st.markdown("## 🔍 Advanced Structure-Property Correlations")
         
@@ -2442,6 +2442,1130 @@ def main():
             st.pyplot(fig)
             plt.close()
         
+        # =========================================================================
+        # NEW: Electronic Effects
+        # =========================================================================
+        elif plot_category == "Electronic Effects":
+            st.markdown("### Electronic Structure Effects on Hydration")
+            
+            col1, col2 = st.columns([2, 1])
+            
+            with col2:
+                plot_type = st.selectbox(
+                    "Select electronic correlation",
+                    ["ΔH vs B-site Electronegativity",
+                     "ΔH vs Electronegativity Difference (χ_B - χ_A)",
+                     "ΔH vs Average Polarizability",
+                     "ΔH vs Average Ionization Potential",
+                     "ΔH vs Charge Density",
+                     "Correlation Matrix: Electronic Descriptors"]
+                )
+                
+                color_by = st.selectbox("Color by", ["B_cation", "A_cation", "dopant"], key="elec_color")
+                
+                show_trend = st.checkbox("Show trend line", value=True)
+            
+            with col1:
+                if plot_type == "ΔH vs B-site Electronegativity":
+                    fig, ax = plt.subplots(figsize=(10, 7))
+                    
+                    groups = plot_df[color_by].unique()
+                    colors = plt.cm.viridis(np.linspace(0, 1, len(groups)))
+                    
+                    for group, color in zip(groups, colors):
+                        subset = plot_df[plot_df[color_by] == group]
+                        ax.scatter(subset['chi_B_avg'], subset['delta_H'], 
+                                  label=group, c=[color], s=100, alpha=0.7,
+                                  edgecolors='black', linewidth=0.5)
+                        
+                        if show_trend and len(subset) >= 3:
+                            z = np.polyfit(subset['chi_B_avg'], subset['delta_H'], 1)
+                            x_trend = np.linspace(subset['chi_B_avg'].min(), subset['chi_B_avg'].max(), 50)
+                            ax.plot(x_trend, np.polyval(z, x_trend), '--', color=color, alpha=0.5)
+                    
+                    ax.set_xlabel('Average B-site Electronegativity (χ_B)', fontsize=12)
+                    ax.set_ylabel('ΔH (kJ mol⁻¹)', fontsize=12)
+                    ax.set_title('Effect of B-site Electronegativity on Hydration Enthalpy', 
+                                fontsize=14, fontweight='bold')
+                    ax.legend(loc='best', fontsize=9)
+                    ax.grid(True, alpha=0.3)
+                    ax.axhline(y=0, color='gray', linestyle='--', alpha=0.3)
+                    
+                    # Add interpretation text
+                    ax.text(0.02, 0.02, 
+                           "Higher electronegativity → stronger\nB-O bond → affects water incorporation",
+                           transform=ax.transAxes, fontsize=9, 
+                           bbox=dict(facecolor='white', alpha=0.8, boxstyle='round,pad=0.5'))
+                    
+                elif plot_type == "ΔH vs Electronegativity Difference (χ_B - χ_A)":
+                    fig, ax = plt.subplots(figsize=(10, 7))
+                    
+                    # Calculate electronegativity difference
+                    plot_df['chi_diff_AB'] = plot_df['chi_B_avg'] - plot_df['chi_A']
+                    
+                    groups = plot_df[color_by].unique()
+                    colors = plt.cm.plasma(np.linspace(0, 1, len(groups)))
+                    
+                    for group, color in zip(groups, colors):
+                        subset = plot_df[plot_df[color_by] == group]
+                        ax.scatter(subset['chi_diff_AB'], subset['delta_H'], 
+                                  label=group, c=[color], s=100, alpha=0.7,
+                                  edgecolors='black', linewidth=0.5)
+                        
+                        if show_trend and len(subset) >= 3:
+                            z = np.polyfit(subset['chi_diff_AB'], subset['delta_H'], 1)
+                            x_trend = np.linspace(subset['chi_diff_AB'].min(), subset['chi_diff_AB'].max(), 50)
+                            ax.plot(x_trend, np.polyval(z, x_trend), '--', color=color, alpha=0.5)
+                    
+                    ax.set_xlabel('Electronegativity Difference (χ_B - χ_A)', fontsize=12)
+                    ax.set_ylabel('ΔH (kJ mol⁻¹)', fontsize=12)
+                    ax.set_title('Effect of A-B Electronegativity Difference', 
+                                fontsize=14, fontweight='bold')
+                    ax.legend(loc='best', fontsize=9)
+                    ax.grid(True, alpha=0.3)
+                    ax.axhline(y=0, color='gray', linestyle='--', alpha=0.3)
+                    ax.axvline(x=0, color='gray', linestyle='--', alpha=0.3)
+                    
+                elif plot_type == "ΔH vs Average Polarizability":
+                    fig, ax = plt.subplots(figsize=(10, 7))
+                    
+                    groups = plot_df[color_by].unique()
+                    colors = plt.cm.coolwarm(np.linspace(0, 1, len(groups)))
+                    
+                    for group, color in zip(groups, colors):
+                        subset = plot_df[plot_df[color_by] == group]
+                        ax.scatter(subset['polarizability_avg'], subset['delta_H'], 
+                                  label=group, c=[color], s=100, alpha=0.7,
+                                  edgecolors='black', linewidth=0.5)
+                        
+                        if show_trend and len(subset) >= 3:
+                            z = np.polyfit(subset['polarizability_avg'], subset['delta_H'], 1)
+                            x_trend = np.linspace(subset['polarizability_avg'].min(), subset['polarizability_avg'].max(), 50)
+                            ax.plot(x_trend, np.polyval(z, x_trend), '--', color=color, alpha=0.5)
+                    
+                    ax.set_xlabel('Average Ionic Polarizability', fontsize=12)
+                    ax.set_ylabel('ΔH (kJ mol⁻¹)', fontsize=12)
+                    ax.set_title('Effect of Polarizability on Hydration', 
+                                fontsize=14, fontweight='bold')
+                    ax.legend(loc='best', fontsize=9)
+                    ax.grid(True, alpha=0.3)
+                    
+                    # Add note about polarizability
+                    ax.text(0.98, 0.02, 
+                           "Higher polarizability → easier\n charge redistribution",
+                           transform=ax.transAxes, fontsize=9, ha='right',
+                           bbox=dict(facecolor='white', alpha=0.8, boxstyle='round,pad=0.5'))
+                    
+                elif plot_type == "ΔH vs Average Ionization Potential":
+                    fig, ax = plt.subplots(figsize=(10, 7))
+                    
+                    groups = plot_df[color_by].unique()
+                    colors = plt.cm.inferno(np.linspace(0, 1, len(groups)))
+                    
+                    for group, color in zip(groups, colors):
+                        subset = plot_df[plot_df[color_by] == group]
+                        ax.scatter(subset['ionization_avg'], subset['delta_H'], 
+                                  label=group, c=[color], s=100, alpha=0.7,
+                                  edgecolors='black', linewidth=0.5)
+                        
+                        if show_trend and len(subset) >= 3:
+                            z = np.polyfit(subset['ionization_avg'], subset['delta_H'], 1)
+                            x_trend = np.linspace(subset['ionization_avg'].min(), subset['ionization_avg'].max(), 50)
+                            ax.plot(x_trend, np.polyval(z, x_trend), '--', color=color, alpha=0.5)
+                    
+                    ax.set_xlabel('Average Ionization Potential (eV)', fontsize=12)
+                    ax.set_ylabel('ΔH (kJ mol⁻¹)', fontsize=12)
+                    ax.set_title('Effect of Ionization Potential on Hydration', 
+                                fontsize=14, fontweight='bold')
+                    ax.legend(loc='best', fontsize=9)
+                    ax.grid(True, alpha=0.3)
+                    
+                elif plot_type == "ΔH vs Charge Density":
+                    fig, ax = plt.subplots(figsize=(10, 7))
+                    
+                    groups = plot_df[color_by].unique()
+                    colors = plt.cm.Spectral(np.linspace(0, 1, len(groups)))
+                    
+                    for group, color in zip(groups, colors):
+                        subset = plot_df[plot_df[color_by] == group]
+                        ax.scatter(subset['charge_density_B'], subset['delta_H'], 
+                                  label=group, c=[color], s=100, alpha=0.7,
+                                  edgecolors='black', linewidth=0.5)
+                        
+                        if show_trend and len(subset) >= 3:
+                            z = np.polyfit(subset['charge_density_B'], subset['delta_H'], 1)
+                            x_trend = np.linspace(subset['charge_density_B'].min(), subset['charge_density_B'].max(), 50)
+                            ax.plot(x_trend, np.polyval(z, x_trend), '--', color=color, alpha=0.5)
+                    
+                    ax.set_xlabel('B-site Charge Density (Z/r, e/Å)', fontsize=12)
+                    ax.set_ylabel('ΔH (kJ mol⁻¹)', fontsize=12)
+                    ax.set_title('Effect of Charge Density on Hydration', 
+                                fontsize=14, fontweight='bold')
+                    ax.legend(loc='best', fontsize=9)
+                    ax.grid(True, alpha=0.3)
+                    
+                elif plot_type == "Correlation Matrix: Electronic Descriptors":
+                    fig, ax = plt.subplots(figsize=(12, 10))
+                    
+                    # Select electronic descriptors
+                    electronic_features = ['chi_A', 'chi_B_avg', 'chi_diff', 'chi_product',
+                                           'polarizability_avg', 'ionization_avg', 
+                                           'charge_density_A', 'charge_density_B', 'delta_H']
+                    
+                    available = [f for f in electronic_features if f in plot_df.columns]
+                    
+                    if len(available) >= 3:
+                        corr_matrix = plot_df[available].corr()
+                        
+                        # Create mask for upper triangle
+                        mask = np.triu(np.ones_like(corr_matrix, dtype=bool))
+                        
+                        sns.heatmap(corr_matrix, mask=mask, annot=True, fmt='.2f', 
+                                   cmap='RdBu_r', center=0, square=True, ax=ax,
+                                   cbar_kws={'label': 'Correlation Coefficient', 'shrink': 0.8},
+                                   annot_kws={'size': 10})
+                        
+                        ax.set_title('Correlation Matrix: Electronic Descriptors vs ΔH', 
+                                    fontsize=14, fontweight='bold')
+                        
+                        # Highlight correlations with ΔH
+                        for i, feat in enumerate(available):
+                            if feat == 'delta_H':
+                                for j in range(len(available)):
+                                    if i != j:
+                                        corr_val = corr_matrix.iloc[i, j]
+                                        if abs(corr_val) > 0.5:
+                                            ax.text(j + 0.5, i + 0.5, '★', 
+                                                   ha='center', va='center', 
+                                                   color='gold', fontsize=14)
+                    else:
+                        ax.text(0.5, 0.5, "Insufficient electronic descriptors available", 
+                               ha='center', va='center', fontsize=14)
+                        ax.set_axis_off()
+                
+                plt.tight_layout()
+                st.pyplot(fig)
+                plt.close()
+            
+            # Summary statistics
+            with col2:
+                st.markdown("### Electronic Descriptor Statistics")
+                
+                stats_data = []
+                for desc in ['chi_B_avg', 'chi_diff', 'polarizability_avg', 'ionization_avg']:
+                    if desc in plot_df.columns:
+                        stats_data.append({
+                            'Descriptor': desc.replace('_', ' ').title(),
+                            'Mean': f"{plot_df[desc].mean():.3f}",
+                            'Range': f"{plot_df[desc].min():.3f} - {plot_df[desc].max():.3f}",
+                            'Corr with ΔH': f"{plot_df[desc].corr(plot_df['delta_H']):.3f}"
+                        })
+                
+                if stats_data:
+                    st.dataframe(pd.DataFrame(stats_data), use_container_width=True)
+        
+        # =========================================================================
+        # NEW: Composition Trends
+        # =========================================================================
+        elif plot_category == "Composition Trends":
+            st.markdown("### Composition-Dependent Hydration Trends")
+            
+            tab1, tab2, tab3 = st.tabs(["Dopant Content Effects", "Material Families", "Statistical Distribution"])
+            
+            with tab1:
+                st.markdown("#### Effect of Dopant Concentration (x)")
+                
+                col1, col2 = st.columns([3, 1])
+                
+                with col2:
+                    # Select specific system for detailed view
+                    a_options = ['All'] + sorted(plot_df['A_cation'].unique().tolist())
+                    selected_a = st.selectbox("Filter A-cation", a_options, key="comp_a")
+                    
+                    b_options = ['All'] + sorted(plot_df['B_cation'].unique().tolist())
+                    selected_b = st.selectbox("Filter B-cation", b_options, key="comp_b")
+                    
+                    d_options = ['All'] + sorted(plot_df['dopant'].unique().tolist())
+                    selected_d = st.selectbox("Filter dopant", d_options, key="comp_d")
+                    
+                    plot_type = st.radio("Plot type", ["ΔH vs x", "ΔS vs x", "Both"], horizontal=True)
+                
+                with col1:
+                    # Filter data
+                    filtered_df = plot_df.copy()
+                    if selected_a != 'All':
+                        filtered_df = filtered_df[filtered_df['A_cation'] == selected_a]
+                    if selected_b != 'All':
+                        filtered_df = filtered_df[filtered_df['B_cation'] == selected_b]
+                    if selected_d != 'All':
+                        filtered_df = filtered_df[filtered_df['dopant'] == selected_d]
+                    
+                    if len(filtered_df) < 3:
+                        st.warning("Not enough data points with current filters")
+                    else:
+                        if plot_type == "ΔH vs x":
+                            fig, ax = plt.subplots(figsize=(10, 6))
+                            
+                            # Group by material system
+                            filtered_df['system'] = filtered_df['A_cation'] + filtered_df['B_cation'] + '-' + filtered_df['dopant']
+                            systems = filtered_df['system'].unique()
+                            colors = plt.cm.tab20(np.linspace(0, 1, len(systems)))
+                            
+                            for system, color in zip(systems, colors):
+                                subset = filtered_df[filtered_df['system'] == system]
+                                ax.scatter(subset['content'], subset['delta_H'], 
+                                          label=system, c=[color], s=100, alpha=0.7,
+                                          edgecolors='black', linewidth=0.5)
+                                
+                                if len(subset) >= 3:
+                                    # Add trend line
+                                    z = np.polyfit(subset['content'], subset['delta_H'], 1)
+                                    x_trend = np.linspace(subset['content'].min(), subset['content'].max(), 50)
+                                    ax.plot(x_trend, np.polyval(z, x_trend), '--', color=color, alpha=0.5)
+                            
+                            ax.set_xlabel('Dopant Content, x', fontsize=12)
+                            ax.set_ylabel('ΔH (kJ mol⁻¹)', fontsize=12)
+                            ax.set_title('Dopant Concentration Effect on Hydration Enthalpy', 
+                                        fontsize=14, fontweight='bold')
+                            ax.legend(loc='best', fontsize=8, ncol=2)
+                            ax.grid(True, alpha=0.3)
+                            
+                        elif plot_type == "ΔS vs x":
+                            fig, ax = plt.subplots(figsize=(10, 6))
+                            
+                            filtered_df['system'] = filtered_df['A_cation'] + filtered_df['B_cation'] + '-' + filtered_df['dopant']
+                            systems = filtered_df['system'].unique()
+                            colors = plt.cm.tab20(np.linspace(0, 1, len(systems)))
+                            
+                            for system, color in zip(systems, colors):
+                                subset = filtered_df[filtered_df['system'] == system]
+                                ax.scatter(subset['content'], subset['delta_S'], 
+                                          label=system, c=[color], s=100, alpha=0.7,
+                                          edgecolors='black', linewidth=0.5)
+                                
+                                if len(subset) >= 3:
+                                    z = np.polyfit(subset['content'], subset['delta_S'], 1)
+                                    x_trend = np.linspace(subset['content'].min(), subset['content'].max(), 50)
+                                    ax.plot(x_trend, np.polyval(z, x_trend), '--', color=color, alpha=0.5)
+                            
+                            ax.set_xlabel('Dopant Content, x', fontsize=12)
+                            ax.set_ylabel('ΔS (J mol⁻¹ K⁻¹)', fontsize=12)
+                            ax.set_title('Dopant Concentration Effect on Hydration Entropy', 
+                                        fontsize=14, fontweight='bold')
+                            ax.legend(loc='best', fontsize=8, ncol=2)
+                            ax.grid(True, alpha=0.3)
+                            
+                        else:  # Both
+                            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+                            
+                            filtered_df['system'] = filtered_df['A_cation'] + filtered_df['B_cation'] + '-' + filtered_df['dopant']
+                            systems = filtered_df['system'].unique()
+                            colors = plt.cm.tab20(np.linspace(0, 1, len(systems)))
+                            
+                            for system, color in zip(systems, colors):
+                                subset = filtered_df[filtered_df['system'] == system]
+                                
+                                # ΔH plot
+                                ax1.scatter(subset['content'], subset['delta_H'], 
+                                           label=system, c=[color], s=80, alpha=0.7,
+                                           edgecolors='black', linewidth=0.5)
+                                if len(subset) >= 3:
+                                    z = np.polyfit(subset['content'], subset['delta_H'], 1)
+                                    x_trend = np.linspace(subset['content'].min(), subset['content'].max(), 50)
+                                    ax1.plot(x_trend, np.polyval(z, x_trend), '--', color=color, alpha=0.5)
+                                
+                                # ΔS plot
+                                ax2.scatter(subset['content'], subset['delta_S'], 
+                                           label=system, c=[color], s=80, alpha=0.7,
+                                           edgecolors='black', linewidth=0.5)
+                                if len(subset) >= 3:
+                                    z = np.polyfit(subset['content'], subset['delta_S'], 1)
+                                    x_trend = np.linspace(subset['content'].min(), subset['content'].max(), 50)
+                                    ax2.plot(x_trend, np.polyval(z, x_trend), '--', color=color, alpha=0.5)
+                            
+                            ax1.set_xlabel('Dopant Content, x')
+                            ax1.set_ylabel('ΔH (kJ mol⁻¹)')
+                            ax1.set_title('Enthalpy vs Content')
+                            ax1.grid(True, alpha=0.3)
+                            
+                            ax2.set_xlabel('Dopant Content, x')
+                            ax2.set_ylabel('ΔS (J mol⁻¹ K⁻¹)')
+                            ax2.set_title('Entropy vs Content')
+                            ax2.grid(True, alpha=0.3)
+                            
+                            ax2.legend(loc='best', fontsize=7, ncol=2)
+                        
+                        plt.tight_layout()
+                        st.pyplot(fig)
+                        plt.close()
+            
+            with tab2:
+                st.markdown("#### Material Family Comparison")
+                
+                col1, col2 = st.columns([3, 1])
+                
+                with col2:
+                    compare_by = st.selectbox("Compare by", ["B_cation", "A_cation", "dopant"])
+                    chart_type = st.selectbox("Chart type", ["Box plot", "Violin plot", "Bar chart"])
+                
+                with col1:
+                    fig, ax = plt.subplots(figsize=(12, 6))
+                    
+                    if chart_type == "Box plot":
+                        data_to_plot = [plot_df[plot_df[compare_by] == cat]['delta_H'].values 
+                                       for cat in sorted(plot_df[compare_by].unique())]
+                        bp = ax.boxplot(data_to_plot, labels=sorted(plot_df[compare_by].unique()), 
+                                       patch_artist=True)
+                        
+                        # Color boxes
+                        for patch, color in zip(bp['boxes'], plt.cm.viridis(np.linspace(0, 1, len(data_to_plot)))):
+                            patch.set_facecolor(color)
+                            patch.set_alpha(0.7)
+                        
+                    elif chart_type == "Violin plot":
+                        data_to_plot = [plot_df[plot_df[compare_by] == cat]['delta_H'].values 
+                                       for cat in sorted(plot_df[compare_by].unique())]
+                        parts = ax.violinplot(data_to_plot, positions=range(1, len(data_to_plot)+1), showmeans=True)
+                        
+                        for pc, color in zip(parts['bodies'], plt.cm.viridis(np.linspace(0, 1, len(data_to_plot)))):
+                            pc.set_facecolor(color)
+                            pc.set_alpha(0.7)
+                        
+                        ax.set_xticks(range(1, len(data_to_plot)+1))
+                        ax.set_xticklabels(sorted(plot_df[compare_by].unique()))
+                        
+                    else:  # Bar chart
+                        means = plot_df.groupby(compare_by)['delta_H'].mean()
+                        stds = plot_df.groupby(compare_by)['delta_H'].std()
+                        
+                        bars = ax.bar(range(len(means)), means.values, yerr=stds.values,
+                                     capsize=5, color=plt.cm.viridis(np.linspace(0, 1, len(means))),
+                                     edgecolor='black', linewidth=0.5, alpha=0.7)
+                        
+                        ax.set_xticks(range(len(means)))
+                        ax.set_xticklabels(means.index, rotation=45, ha='right')
+                        
+                        # Add value labels
+                        for i, (bar, val) in enumerate(zip(bars, means.values)):
+                            ax.text(i, val + 2, f'{val:.1f}', ha='center', fontsize=9)
+                    
+                    ax.set_ylabel('ΔH (kJ mol⁻¹)', fontsize=12)
+                    ax.set_title(f'ΔH Distribution by {compare_by}', fontsize=14, fontweight='bold')
+                    ax.axhline(y=plot_df['delta_H'].mean(), color='red', linestyle='--', 
+                              alpha=0.5, label=f'Global mean: {plot_df["delta_H"].mean():.1f}')
+                    ax.legend()
+                    ax.grid(True, alpha=0.3, axis='y')
+                    
+                    plt.tight_layout()
+                    st.pyplot(fig)
+                    plt.close()
+            
+            with tab3:
+                st.markdown("#### Statistical Summary by Composition")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    group_by = st.selectbox("Group by for statistics", 
+                                           ["A_cation", "B_cation", "dopant", "A_cation + B_cation"])
+                    
+                with col2:
+                    metric = st.selectbox("Metric", ["ΔH", "ΔS", "content"])
+                
+                # Create summary table
+                if group_by == "A_cation + B_cation":
+                    plot_df['A_B_system'] = plot_df['A_cation'] + plot_df['B_cation']
+                    summary = plot_df.groupby('A_B_system').agg({
+                        'delta_H': ['count', 'mean', 'std', 'min', 'max'],
+                        'delta_S': ['count', 'mean', 'std', 'min', 'max'],
+                        'content': ['mean', 'min', 'max']
+                    }).round(2)
+                    
+                    # Flatten column names
+                    summary.columns = ['_'.join(col).strip() for col in summary.columns.values]
+                    summary = summary.reset_index()
+                    summary.columns = ['System', 'Count_H', 'Mean_H', 'Std_H', 'Min_H', 'Max_H',
+                                       'Count_S', 'Mean_S', 'Std_S', 'Min_S', 'Max_S',
+                                       'Mean_x', 'Min_x', 'Max_x']
+                    
+                    st.dataframe(summary, use_container_width=True)
+                    
+                else:
+                    summary = plot_df.groupby(group_by).agg({
+                        'delta_H': ['count', 'mean', 'std', 'min', 'max'],
+                        'delta_S': ['count', 'mean', 'std', 'min', 'max'],
+                        'content': ['mean', 'min', 'max']
+                    }).round(2)
+                    
+                    st.dataframe(summary, use_container_width=True)
+                
+                # Download summary
+                csv = summary.to_csv()
+                st.download_button("📥 Download Statistics", csv, "composition_statistics.csv", "text/csv")
+        
+        # =========================================================================
+        # NEW: Statistical Overview
+        # =========================================================================
+        elif plot_category == "Statistical Overview":
+            st.markdown("### Comprehensive Statistical Analysis")
+            
+            tab1, tab2, tab3, tab4 = st.tabs(["Distribution Analysis", "Correlation Matrix", 
+                                              "Outlier Detection", "Statistical Tests"])
+            
+            with tab1:
+                st.markdown("#### Distribution Analysis of Key Parameters")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    var1 = st.selectbox("Select variable for histogram", 
+                                       ['delta_H', 'delta_S', 'content', 'r_B_avg', 
+                                        't_Goldschmidt', 'chi_diff'], key="hist_var")
+                    
+                    bins = st.slider("Number of bins", 5, 30, 15, key="hist_bins")
+                    
+                with col2:
+                    group_by_hist = st.selectbox("Color by (optional)", 
+                                               ['None', 'A_cation', 'B_cation', 'dopant'], key="hist_color")
+                
+                fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+                
+                # Histogram with KDE
+                ax1 = axes[0, 0]
+                if group_by_hist == 'None':
+                    ax1.hist(plot_df[var1], bins=bins, color=MODERN_COLORS['primary'], 
+                            edgecolor='white', alpha=0.7, density=True)
+                    plot_df[var1].plot(kind='kde', ax=ax1, color='red', linewidth=2, 
+                                      label='KDE', secondary_y=False)
+                else:
+                    for group in plot_df[group_by_hist].unique():
+                        subset = plot_df[plot_df[group_by_hist] == group][var1]
+                        ax1.hist(subset, bins=bins, alpha=0.5, label=group, density=True)
+                    ax1.legend()
+                
+                ax1.set_xlabel(var1.replace('_', ' ').title())
+                ax1.set_ylabel('Density')
+                ax1.set_title(f'Distribution of {var1.replace("_", " ").title()}')
+                ax1.grid(True, alpha=0.3)
+                
+                # Q-Q plot for normality check
+                ax2 = axes[0, 1]
+                from scipy import stats
+                stats.probplot(plot_df[var1].dropna(), dist="norm", plot=ax2)
+                ax2.set_title(f'Q-Q Plot: {var1.replace("_", " ").title()}')
+                ax2.grid(True, alpha=0.3)
+                
+                # Box plot
+                ax3 = axes[1, 0]
+                if group_by_hist != 'None':
+                    plot_df.boxplot(column=var1, by=group_by_hist, ax=ax3)
+                    ax3.set_title(f'Box Plot by {group_by_hist}')
+                else:
+                    plot_df.boxplot(column=var1, ax=ax3)
+                    ax3.set_title(f'Box Plot of {var1.replace("_", " ").title()}')
+                ax3.grid(True, alpha=0.3)
+                
+                # Violin plot
+                ax4 = axes[1, 1]
+                if group_by_hist != 'None':
+                    data_to_plot = [plot_df[plot_df[group_by_hist] == cat][var1].dropna().values 
+                                   for cat in sorted(plot_df[group_by_hist].unique())]
+                    parts = ax4.violinplot(data_to_plot, positions=range(1, len(data_to_plot)+1), showmeans=True)
+                    ax4.set_xticks(range(1, len(data_to_plot)+1))
+                    ax4.set_xticklabels(sorted(plot_df[group_by_hist].unique()), rotation=45, ha='right')
+                    
+                    # Color violins
+                    for i, pc in enumerate(parts['bodies']):
+                        pc.set_facecolor(plt.cm.viridis(i/len(data_to_plot)))
+                        pc.set_alpha(0.7)
+                else:
+                    ax4.text(0.5, 0.5, "Select grouping for violin plot", 
+                            ha='center', va='center', transform=ax4.transAxes)
+                
+                ax4.set_ylabel(var1.replace('_', ' ').title())
+                ax4.set_title('Violin Plot Distribution')
+                ax4.grid(True, alpha=0.3)
+                
+                plt.suptitle('Statistical Distribution Analysis', fontsize=14, fontweight='bold', y=1.02)
+                plt.tight_layout()
+                st.pyplot(fig)
+                plt.close()
+                
+                # Summary statistics table
+                st.markdown("#### Summary Statistics")
+                
+                stats_df = plot_df[['delta_H', 'delta_S', 'content', 'r_B_avg', 
+                                    't_Goldschmidt', 'chi_diff']].describe().T
+                stats_df['skewness'] = plot_df[['delta_H', 'delta_S', 'content', 'r_B_avg', 
+                                                't_Goldschmidt', 'chi_diff']].skew()
+                stats_df['kurtosis'] = plot_df[['delta_H', 'delta_S', 'content', 'r_B_avg', 
+                                                't_Goldschmidt', 'chi_diff']].kurtosis()
+                
+                st.dataframe(stats_df.round(3), use_container_width=True)
+            
+            with tab2:
+                st.markdown("#### Enhanced Correlation Matrix")
+                
+                # Select features for correlation
+                all_features = ['delta_H', 'delta_S', 'content', 'r_B_avg', 't_Goldschmidt', 
+                               'chi_diff', 'polarizability_avg', 'ionization_avg', 
+                               'charge_density_B', 'lattice_energy']
+                
+                available_features = [f for f in all_features if f in plot_df.columns]
+                
+                selected_features = st.multiselect(
+                    "Select features for correlation matrix",
+                    available_features,
+                    default=available_features[:min(8, len(available_features))]
+                )
+                
+                if len(selected_features) >= 2:
+                    fig, ax = plt.subplots(figsize=(12, 10))
+                    
+                    corr_matrix = plot_df[selected_features].corr()
+                    
+                    # Create mask for upper triangle
+                    mask = np.triu(np.ones_like(corr_matrix, dtype=bool))
+                    
+                    # Generate heatmap
+                    sns.heatmap(corr_matrix, mask=mask, annot=True, fmt='.2f', 
+                               cmap='RdBu_r', center=0, square=True, ax=ax,
+                               cbar_kws={'label': 'Correlation Coefficient', 'shrink': 0.8},
+                               annot_kws={'size': 10})
+                    
+                    ax.set_title('Feature Correlation Matrix', fontsize=14, fontweight='bold')
+                    
+                    # Highlight strong correlations with ΔH
+                    if 'delta_H' in selected_features:
+                        h_idx = selected_features.index('delta_H')
+                        for i, feat in enumerate(selected_features):
+                            if i != h_idx:
+                                corr_val = corr_matrix.iloc[h_idx, i]
+                                if abs(corr_val) > 0.5:
+                                    ax.text(i + 0.5, h_idx + 0.5, '★', 
+                                           ha='center', va='center', 
+                                           color='gold', fontsize=14)
+                    
+                    st.pyplot(fig)
+                    plt.close()
+                    
+                    # Feature clustering dendrogram
+                    st.markdown("#### Feature Clustering Dendrogram")
+                    
+                    from scipy.cluster.hierarchy import dendrogram, linkage
+                    
+                    fig, ax = plt.subplots(figsize=(12, 6))
+                    
+                    # Calculate linkage based on correlation distance
+                    corr_dist = 1 - abs(corr_matrix)
+                    linkage_matrix = linkage(corr_dist, method='average')
+                    
+                    dendrogram(linkage_matrix, labels=selected_features, ax=ax,
+                              leaf_rotation=45, leaf_font_size=10,
+                              color_threshold=0.5)
+                    
+                    ax.set_title('Feature Clustering Dendrogram (based on correlation)',
+                                fontsize=14, fontweight='bold')
+                    ax.set_ylabel('Distance (1 - |r|)')
+                    ax.grid(True, alpha=0.3, axis='y')
+                    
+                    st.pyplot(fig)
+                    plt.close()
+            
+            with tab3:
+                st.markdown("#### Outlier Detection")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    outlier_var = st.selectbox("Select variable for outlier detection", 
+                                              ['delta_H', 'delta_S', 'content'], key="outlier_var")
+                    
+                    method = st.selectbox("Detection method", 
+                                         ["IQR", "Z-score", "Modified Z-score"])
+                
+                with col2:
+                    threshold = st.slider("Threshold", 1.0, 5.0, 3.0, 0.5)
+                    show_stats = st.checkbox("Show statistics", True)
+                
+                # Detect outliers
+                if method == "IQR":
+                    Q1 = plot_df[outlier_var].quantile(0.25)
+                    Q3 = plot_df[outlier_var].quantile(0.75)
+                    IQR = Q3 - Q1
+                    lower_bound = Q1 - threshold * IQR
+                    upper_bound = Q3 + threshold * IQR
+                    outliers = plot_df[(plot_df[outlier_var] < lower_bound) | 
+                                       (plot_df[outlier_var] > upper_bound)]
+                    
+                elif method == "Z-score":
+                    from scipy import stats
+                    z_scores = np.abs(stats.zscore(plot_df[outlier_var].dropna()))
+                    outliers = plot_df.iloc[np.where(z_scores > threshold)[0]]
+                    
+                else:  # Modified Z-score
+                    from scipy import stats
+                    median = plot_df[outlier_var].median()
+                    mad = stats.median_abs_deviation(plot_df[outlier_var].dropna())
+                    modified_z_scores = 0.6745 * (plot_df[outlier_var] - median) / mad
+                    outliers = plot_df[np.abs(modified_z_scores) > threshold]
+                
+                # Visualization
+                fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+                
+                # Box plot with outliers highlighted
+                ax1 = axes[0]
+                bp = ax1.boxplot(plot_df[outlier_var].dropna(), patch_artist=True)
+                bp['boxes'][0].set_facecolor('lightblue')
+                bp['boxes'][0].set_alpha(0.7)
+                
+                # Highlight outliers
+                if not outliers.empty:
+                    outlier_vals = outliers[outlier_var].values
+                    ax1.plot(np.ones_like(outlier_vals), outlier_vals, 'ro', 
+                            markersize=8, label=f'Outliers (n={len(outliers)})')
+                
+                ax1.set_ylabel(outlier_var.replace('_', ' ').title())
+                ax1.set_title(f'Outlier Detection: {method} (threshold={threshold})')
+                ax1.legend()
+                ax1.grid(True, alpha=0.3)
+                
+                # Scatter plot of outliers vs non-outliers
+                ax2 = axes[1]
+                
+                # Create a boolean mask for outliers
+                if not outliers.empty:
+                    outlier_mask = plot_df.index.isin(outliers.index)
+                    
+                    # Plot non-outliers
+                    ax2.scatter(range(len(plot_df[~outlier_mask])), 
+                               plot_df[~outlier_mask][outlier_var], 
+                               c='blue', alpha=0.5, label='Normal', s=50)
+                    
+                    # Plot outliers
+                    ax2.scatter(np.where(outlier_mask)[0], 
+                               plot_df[outlier_mask][outlier_var], 
+                               c='red', alpha=0.8, label='Outlier', s=80, 
+                               edgecolors='black', linewidth=0.5)
+                    
+                    ax2.set_xlabel('Data Point Index')
+                    ax2.set_ylabel(outlier_var.replace('_', ' ').title())
+                    ax2.set_title('Outlier Distribution')
+                    ax2.legend()
+                    ax2.grid(True, alpha=0.3)
+                else:
+                    ax2.text(0.5, 0.5, 'No outliers detected', 
+                            ha='center', va='center', transform=ax2.transAxes,
+                            fontsize=14)
+                
+                plt.tight_layout()
+                st.pyplot(fig)
+                plt.close()
+                
+                # Show outliers table
+                if not outliers.empty:
+                    st.markdown("#### Detected Outliers")
+                    st.dataframe(outliers[['A_cation', 'B_cation', 'dopant', 'content', 
+                                           outlier_var, 'reference']], use_container_width=True)
+                    
+                    # Download outliers
+                    csv = outliers.to_csv(index=False)
+                    st.download_button("📥 Download Outliers", csv, "outliers.csv", "text/csv")
+                
+                if show_stats:
+                    st.markdown("#### Outlier Statistics")
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Total samples", len(plot_df))
+                    with col2:
+                        st.metric("Outliers", len(outliers))
+                    with col3:
+                        st.metric("Outlier %", f"{len(outliers)/len(plot_df)*100:.1f}%")
+            
+            with tab4:
+                st.markdown("#### Statistical Hypothesis Tests")
+                
+                test_type = st.selectbox("Select test", 
+                                        ["t-test (two groups)", 
+                                         "ANOVA (multiple groups)",
+                                         "Correlation test",
+                                         "Normality test"])
+                
+                if test_type == "t-test (two groups)":
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        group_var = st.selectbox("Grouping variable", 
+                                               ['A_cation', 'B_cation', 'dopant'])
+                        groups = plot_df[group_var].unique()
+                        
+                        if len(groups) >= 2:
+                            group1 = st.selectbox("Group 1", groups, index=0)
+                            group2 = st.selectbox("Group 2", groups, index=min(1, len(groups)-1))
+                    
+                    with col2:
+                        test_var = st.selectbox("Test variable", ['delta_H', 'delta_S', 'content'])
+                        equal_var = st.checkbox("Assume equal variance", True)
+                    
+                    if len(groups) >= 2 and group1 != group2:
+                        data1 = plot_df[plot_df[group_var] == group1][test_var].dropna()
+                        data2 = plot_df[plot_df[group_var] == group2][test_var].dropna()
+                        
+                        from scipy import stats
+                        t_stat, p_value = stats.ttest_ind(data1, data2, equal_var=equal_var)
+                        
+                        st.markdown("#### t-test Results")
+                        
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            st.metric("t-statistic", f"{t_stat:.4f}")
+                        with col2:
+                            st.metric("p-value", f"{p_value:.4f}")
+                        with col3:
+                            st.metric("Significant", "Yes" if p_value < 0.05 else "No")
+                        with col4:
+                            st.metric("Confidence", "95%" if p_value < 0.05 else "<95%")
+                        
+                        # Visualization
+                        fig, ax = plt.subplots(figsize=(8, 5))
+                        
+                        data_to_plot = [data1, data2]
+                        bp = ax.boxplot(data_to_plot, labels=[group1, group2], patch_artist=True)
+                        
+                        colors = [MODERN_COLORS['primary'], MODERN_COLORS['secondary']]
+                        for patch, color in zip(bp['boxes'], colors):
+                            patch.set_facecolor(color)
+                            patch.set_alpha(0.7)
+                        
+                        ax.set_ylabel(test_var.replace('_', ' ').title())
+                        ax.set_title(f't-test: {group1} vs {group2}\np-value = {p_value:.4f}')
+                        ax.grid(True, alpha=0.3)
+                        
+                        st.pyplot(fig)
+                        plt.close()
+                
+                elif test_type == "ANOVA (multiple groups)":
+                    group_var = st.selectbox("Grouping variable", 
+                                           ['A_cation', 'B_cation', 'dopant'], key="anova_group")
+                    test_var = st.selectbox("Test variable", ['delta_H', 'delta_S', 'content'], key="anova_var")
+                    
+                    groups = plot_df[group_var].unique()
+                    
+                    if len(groups) >= 2:
+                        data_groups = [plot_df[plot_df[group_var] == g][test_var].dropna().values 
+                                      for g in groups]
+                        
+                        from scipy import stats
+                        f_stat, p_value = stats.f_oneway(*data_groups)
+                        
+                        st.markdown("#### ANOVA Results")
+                        
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            st.metric("F-statistic", f"{f_stat:.4f}")
+                        with col2:
+                            st.metric("p-value", f"{p_value:.4f}")
+                        with col3:
+                            st.metric("Significant", "Yes" if p_value < 0.05 else "No")
+                        with col4:
+                            st.metric("Groups", len(groups))
+                        
+                        # Visualization
+                        fig, ax = plt.subplots(figsize=(10, 5))
+                        
+                        bp = ax.boxplot(data_groups, labels=groups, patch_artist=True)
+                        
+                        for i, patch in enumerate(bp['boxes']):
+                            patch.set_facecolor(plt.cm.viridis(i/len(groups)))
+                            patch.set_alpha(0.7)
+                        
+                        ax.set_ylabel(test_var.replace('_', ' ').title())
+                        ax.set_title(f'ANOVA: Comparison across {group_var}\np-value = {p_value:.4f}')
+                        ax.grid(True, alpha=0.3)
+                        
+                        st.pyplot(fig)
+                        plt.close()
+        
+        # =========================================================================
+        # NEW: 2D Hydration Maps
+        # =========================================================================
+        elif plot_category == "2D Hydration Maps":
+            st.markdown("### 2D Hydration Maps for Material Design")
+            
+            st.markdown("""
+            <div class="card">
+                <p>These maps help identify optimal composition regions for strong hydration.
+                Darker blue regions indicate more negative ΔH (stronger hydration).</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            tab1, tab2, tab3 = st.tabs(["Contour Maps", "Experimental Coverage", "Design Guide"])
+            
+            with tab1:
+                st.markdown("#### Hydration Enthalpy Contour Maps")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    x_axis = st.selectbox("X-axis", 
+                                         ['r_B_avg', 't_Goldschmidt', 'content', 'chi_diff'],
+                                         index=0, key="2d_x")
+                    
+                with col2:
+                    y_axis = st.selectbox("Y-axis", 
+                                         ['chi_diff', 'content', 't_Goldschmidt', 'r_B_avg'],
+                                         index=1, key="2d_y")
+                
+                # Create grid for interpolation
+                x_grid = np.linspace(plot_df[x_axis].min(), plot_df[x_axis].max(), 50)
+                y_grid = np.linspace(plot_df[y_axis].min(), plot_df[y_axis].max(), 50)
+                X, Y = np.meshgrid(x_grid, y_grid)
+                
+                # Interpolate ΔH
+                from scipy.interpolate import griddata
+                Z = griddata((plot_df[x_axis], plot_df[y_axis]), plot_df['delta_H'], 
+                            (X, Y), method='cubic')
+                
+                fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+                
+                # Plot 1: Filled contour
+                ax1 = axes[0]
+                contour1 = ax1.contourf(X, Y, Z, levels=20, cmap='RdBu_r', alpha=0.8)
+                plt.colorbar(contour1, ax=ax1, label='ΔH (kJ/mol)')
+                
+                # Add contour lines
+                contour_lines = ax1.contour(X, Y, Z, levels=10, colors='black', linewidths=0.5, alpha=0.3)
+                ax1.clabel(contour_lines, inline=True, fontsize=8, fmt='%.0f')
+                
+                # Add experimental points
+                scatter = ax1.scatter(plot_df[x_axis], plot_df[y_axis], 
+                                     c=plot_df['delta_H'], cmap='RdBu_r', 
+                                     s=80, edgecolors='black', linewidth=0.5,
+                                     vmin=-150, vmax=-50)
+                
+                ax1.set_xlabel(x_axis.replace('_', ' ').title())
+                ax1.set_ylabel(y_axis.replace('_', ' ').title())
+                ax1.set_title('ΔH Contour Map with Data Points')
+                ax1.grid(True, alpha=0.3)
+                
+                # Plot 2: Optimal regions highlighted
+                ax2 = axes[1]
+                
+                # Define optimal regions (ΔH < -100 kJ/mol)
+                optimal_mask = Z < -100
+                optimal_masked = np.ma.masked_where(~optimal_mask, Z)
+                
+                # Background
+                ax2.contourf(X, Y, Z, levels=20, cmap='gray', alpha=0.3)
+                
+                # Highlight optimal regions
+                if optimal_mask.any():
+                    contour_opt = ax2.contourf(X, Y, optimal_masked, levels=[-200, -100], 
+                                              colors=['lightblue'], alpha=0.7)
+                    
+                    # Add boundary
+                    ax2.contour(X, Y, Z, levels=[-100], colors='red', linewidths=2, linestyles='--')
+                
+                # Add points with color by ΔH
+                scatter2 = ax2.scatter(plot_df[x_axis], plot_df[y_axis], 
+                                      c=plot_df['delta_H'], cmap='RdBu_r',
+                                      s=80, edgecolors='black', linewidth=0.5,
+                                      vmin=-150, vmax=-50)
+                
+                ax2.set_xlabel(x_axis.replace('_', ' ').title())
+                ax2.set_ylabel(y_axis.replace('_', ' ').title())
+                ax2.set_title('Optimal Hydration Regions (ΔH < -100 kJ/mol)')
+                ax2.grid(True, alpha=0.3)
+                
+                # Plot 3: Gradient map (sensitivity)
+                ax3 = axes[2]
+                
+                # Calculate gradient magnitude
+                dy, dx = np.gradient(Z)
+                gradient_magnitude = np.sqrt(dx**2 + dy**2)
+                
+                contour3 = ax3.contourf(X, Y, gradient_magnitude, levels=20, cmap='hot', alpha=0.8)
+                plt.colorbar(contour3, ax=ax3, label='|∇ΔH|')
+                
+                # Add experimental points
+                ax3.scatter(plot_df[x_axis], plot_df[y_axis], 
+                           c='white', s=30, alpha=0.5, edgecolors='black', linewidth=0.5)
+                
+                ax3.set_xlabel(x_axis.replace('_', ' ').title())
+                ax3.set_ylabel(y_axis.replace('_', ' ').title())
+                ax3.set_title('Gradient Map (Sensitivity)')
+                ax3.grid(True, alpha=0.3)
+                
+                plt.suptitle(f'2D Hydration Maps: {x_axis.replace("_", " ").title()} vs {y_axis.replace("_", " ").title()}', 
+                            fontsize=14, fontweight='bold', y=1.05)
+                plt.tight_layout()
+                st.pyplot(fig)
+                plt.close()
+            
+            with tab2:
+                st.markdown("#### Experimental Coverage Analysis")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    dim1 = st.selectbox("Dimension 1", 
+                                       ['r_B_avg', 't_Goldschmidt', 'content', 'chi_diff'],
+                                       index=0, key="cov_x")
+                    
+                with col2:
+                    dim2 = st.selectbox("Dimension 2", 
+                                       ['chi_diff', 'content', 't_Goldschmidt', 'r_B_avg'],
+                                       index=1, key="cov_y")
+                
+                # Create 2D histogram of experimental coverage
+                fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+                
+                # Plot 1: Hexbin plot (density)
+                ax1 = axes[0]
+                hb = ax1.hexbin(plot_df[dim1], plot_df[dim2], gridsize=20, 
+                               cmap='YlOrRd', mincnt=1, alpha=0.8,
+                               edgecolors='white', linewidth=0.5)
+                plt.colorbar(hb, ax=ax1, label='Number of samples')
+                
+                ax1.set_xlabel(dim1.replace('_', ' ').title())
+                ax1.set_ylabel(dim2.replace('_', ' ').title())
+                ax1.set_title('Experimental Density Map')
+                ax1.grid(True, alpha=0.3)
+                
+                # Plot 2: Coverage gaps
+                ax2 = axes[1]
+                
+                # Create grid for coverage assessment
+                x_grid = np.linspace(plot_df[dim1].min(), plot_df[dim1].max(), 30)
+                y_grid = np.linspace(plot_df[dim2].min(), plot_df[dim2].max(), 30)
+                X_grid, Y_grid = np.meshgrid(x_grid, y_grid)
+                
+                # Find nearest experimental point for each grid point
+                from scipy.spatial import cKDTree
+                points = np.column_stack([plot_df[dim1].values, plot_df[dim2].values])
+                tree = cKDTree(points)
+                
+                grid_points = np.column_stack([X_grid.ravel(), Y_grid.ravel()])
+                distances, _ = tree.query(grid_points)
+                distances = distances.reshape(X_grid.shape)
+                
+                # Plot coverage gaps (areas far from experimental points)
+                gap_threshold = np.percentile(distances, 75)
+                gap_mask = distances > gap_threshold
+                
+                # Background
+                ax2.contourf(X_grid, Y_grid, distances, levels=20, cmap='viridis_r', alpha=0.5)
+                
+                # Highlight gaps
+                if gap_mask.any():
+                    gap_masked = np.ma.masked_where(~gap_mask, distances)
+                    contour_gap = ax2.contourf(X_grid, Y_grid, gap_masked, 
+                                              levels=[gap_threshold, distances.max()],
+                                              colors=['red'], alpha=0.3)
+                
+                # Add experimental points
+                ax2.scatter(plot_df[dim1], plot_df[dim2], 
+                           c='black', s=30, alpha=0.7, edgecolors='white', linewidth=0.5)
+                
+                ax2.set_xlabel(dim1.replace('_', ' ').title())
+                ax2.set_ylabel(dim2.replace('_', ' ').title())
+                ax2.set_title(f'Coverage Gaps (Red = Under-explored)')
+                ax2.grid(True, alpha=0.3)
+                
+                plt.suptitle('Experimental Coverage Analysis', fontsize=14, fontweight='bold')
+                plt.tight_layout()
+                st.pyplot(fig)
+                plt.close()
+                
+                # Coverage statistics
+                st.markdown("#### Coverage Statistics")
+                
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric("Total samples", len(plot_df))
+                
+                with col2:
+                    # Calculate area coverage (simplified)
+                    x_range = plot_df[dim1].max() - plot_df[dim1].min()
+                    y_range = plot_df[dim2].max() - plot_df[dim2].min()
+                    total_area = x_range * y_range
+                    
+                    # Estimate covered area (using convex hull)
+                    from scipy.spatial import ConvexHull
+                    if len(plot_df) >= 3:
+                        points = plot_df[[dim1, dim2]].values
+                        hull = ConvexHull(points)
+                        covered_area = hull.volume  # area for 2D
+                        coverage_pct = (covered_area / total_area) * 100
+                        st.metric("Area coverage", f"{coverage_pct:.1f}%")
+                    else:
+                        st.metric("Area coverage", "N/A")
+                
+                with col3:
+                    st.metric("Data density", f"{len(plot_df)/total_area:.2f} pts/unit²")
+                
+                with col4:
+                    # Recommended new experiments
+                    st.metric("Suggested experiments", f"{int(len(plot_df) * 0.3)}")
+            
+            with tab3:
+                st.markdown("#### Material Design Guide")
+                
+                st.markdown("""
+                <div class="card">
+                    <h4>How to use these maps for materials design:</h4>
+                    <ol>
+                        <li><b>Identify optimal regions</b> - Look for dark blue areas in contour maps (ΔH < -100 kJ/mol)</li>
+                        <li><b>Check experimental coverage</b> - Ensure your target composition is in a well-explored region</li>
+                        <li><b>Avoid high-gradient areas</b> - Red regions in gradient maps indicate high sensitivity to composition variations</li>
+                        <li><b>Fill coverage gaps</b> - Prioritize unexplored regions for new experiments</li>
+                    </ol>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Generate recommendations
+                st.markdown("#### Recommended Compositions for Exploration")
+                
+                # Create grid for recommendations
+                x_grid = np.linspace(plot_df['r_B_avg'].min(), plot_df['r_B_avg'].max(), 20)
+                y_grid = np.linspace(plot_df['chi_diff'].min(), plot_df['chi_diff'].max(), 20)
+                X, Y = np.meshgrid(x_grid, y_grid)
+                
+                # Interpolate ΔH
+                Z = griddata((plot_df['r_B_avg'], plot_df['chi_diff']), plot_df['delta_H'], 
+                            (X, Y), method='cubic')
+                
+                # Find promising regions (ΔH < -100) that are far from existing points
+                promising_mask = Z < -100
+                
+                if promising_mask.any():
+                    # Get grid points in promising regions
+                    promising_points = np.column_stack([X[promising_mask], Y[promising_mask]])
+                    
+                    # Calculate distances to nearest experimental point
+                    exp_points = plot_df[['r_B_avg', 'chi_diff']].values
+                    tree = cKDTree(exp_points)
+                    distances, _ = tree.query(promising_points)
+                    
+                    # Sort by distance (prioritize unexplored regions)
+                    sorted_idx = np.argsort(-distances)  # farthest first
+                    
+                    # Show top recommendations
+                    recommendations = []
+                    for i in sorted_idx[:10]:
+                        recommendations.append({
+                            'Rank': len(recommendations) + 1,
+                            'r_B_avg (Å)': f"{promising_points[i, 0]:.3f}",
+                            'χ_diff': f"{promising_points[i, 1]:.3f}",
+                            'Predicted ΔH (kJ/mol)': f"{Z[promising_mask][i]:.1f}",
+                            'Distance to known': f"{distances[i]:.3f}"
+                        })
+                    
+                    st.dataframe(pd.DataFrame(recommendations), use_container_width=True)
+                else:
+                    st.info("No promising regions identified with current criteria")
+        
         elif plot_category == "Advanced 3D Analysis":
             if model_data is not None:
                 st.markdown("### 3D Hydration Landscape with Projections")
@@ -2451,9 +3575,203 @@ def main():
             else:
                 st.warning("Model data not available for 3D analysis")
         
+        # =========================================================================
+        # Исправленный Multi-dimensional Patterns
+        # =========================================================================
         elif plot_category == "Multi-dimensional Patterns":
             st.markdown("### Multi-dimensional Pattern Analysis")
-            fig = create_enhanced_parallel_coordinates(plot_df)
+            
+            # Исправленная функция create_enhanced_parallel_coordinates
+            def create_enhanced_parallel_coordinates_fixed(df_features):
+                """Create enhanced parallel coordinates plot for multi-dimensional analysis (исправленная версия)"""
+                
+                # Select key descriptors for analysis
+                features = ['r_B_avg', 't_Goldschmidt', 'chi_diff', 'delta_r_B', 
+                            'content', 'polarizability_avg', 'ionization_avg', 'delta_H']
+                
+                # Filter available features
+                available_features = [f for f in features if f in df_features.columns]
+                
+                if len(available_features) < 3:
+                    return None
+                
+                # Normalize data for visualization
+                df_norm = df_features[available_features].copy()
+                for col in available_features[:-1]:  # Don't normalize target
+                    min_val = df_norm[col].min()
+                    max_val = df_norm[col].max()
+                    if max_val > min_val:
+                        df_norm[col] = (df_norm[col] - min_val) / (max_val - min_val)
+                
+                # Create figure
+                fig, axes = plt.subplots(2, 2, figsize=(20, 14))
+                
+                # Plot 1: Parallel coordinates with color by ΔH
+                ax1 = axes[0, 0]
+                
+                # Color mapping based on ΔH
+                norm = plt.Normalize(df_features['delta_H'].min(), df_features['delta_H'].max())
+                colors = plt.cm.RdBu_r(norm(df_features['delta_H']))
+                
+                # Coordinates for vertical lines
+                x_coords = np.arange(len(available_features))
+                
+                # Plot lines for each material
+                for idx in range(len(df_norm)):
+                    y_coords = df_norm.iloc[idx, :].values
+                    ax1.plot(x_coords, y_coords, color=colors[idx], alpha=0.3, linewidth=0.5)
+                
+                # Add mean lines for ΔH quartiles - ИСПРАВЛЕНО
+                try:
+                    # Используем qcut только если достаточно уникальных значений
+                    if df_features['delta_H'].nunique() >= 4:
+                        delta_H_bins = pd.qcut(df_features['delta_H'], q=4, labels=['Q1', 'Q2', 'Q3', 'Q4'])
+                        
+                        for bin_name, group in df_features.groupby(delta_H_bins):
+                            if len(group) > 2:
+                                group_norm = df_norm.loc[group.index]
+                                mean_values = group_norm[available_features].mean()
+                                ax1.plot(x_coords, mean_values, linewidth=3, 
+                                        label=f'{bin_name} (ΔH: {group["delta_H"].mean():.0f} kJ/mol)', 
+                                        alpha=0.8)
+                    else:
+                        # Если мало данных, просто покажем среднюю линию
+                        mean_values = df_norm[available_features].mean()
+                        ax1.plot(x_coords, mean_values, linewidth=3, color='black',
+                                label=f'Mean (n={len(df_features)})', alpha=0.8)
+                except Exception as e:
+                    # В случае ошибки показываем среднюю линию
+                    mean_values = df_norm[available_features].mean()
+                    ax1.plot(x_coords, mean_values, linewidth=3, color='black',
+                            label=f'Mean (n={len(df_features)})', alpha=0.8)
+                
+                ax1.set_xticks(x_coords)
+                ax1.set_xticklabels([f.replace('_', ' ').title() for f in available_features], 
+                                    rotation=45, ha='right', fontsize=9)
+                ax1.set_ylabel('Normalized Value', fontsize=10)
+                ax1.set_title('Parallel Coordinates: Multi-dimensional Patterns', 
+                              fontsize=12, fontweight='bold')
+                ax1.legend(loc='upper right', frameon=True, fancybox=False, edgecolor='black', fontsize=8)
+                ax1.grid(True, alpha=0.3)
+                ax1.set_ylim(-0.1, 1.1)
+                
+                # Plot 2: Feature correlation heatmap
+                ax2 = axes[0, 1]
+                
+                # Calculate correlation matrix
+                corr_matrix = df_features[available_features].corr()
+                
+                # Create mask for upper triangle
+                mask = np.triu(np.ones_like(corr_matrix, dtype=bool))
+                
+                # Heatmap
+                sns.heatmap(corr_matrix, mask=mask, annot=True, fmt='.2f', 
+                            cmap='RdBu_r', center=0, square=True, ax=ax2,
+                            cbar_kws={'label': 'Correlation Coefficient', 'shrink': 0.8},
+                            annot_kws={'size': 8})
+                ax2.set_title('Feature Correlation Matrix', fontsize=12, fontweight='bold')
+                ax2.set_xticklabels(ax2.get_xticklabels(), rotation=45, ha='right', fontsize=8)
+                ax2.set_yticklabels(ax2.get_yticklabels(), rotation=0, fontsize=8)
+                
+                # Plot 3: Radar charts for characteristic compositions - ИСПРАВЛЕНО
+                ax3 = axes[1, 0]
+                
+                if len(df_features) >= 4:
+                    # Find representative compositions for each ΔH quartile
+                    n_radar = min(4, len(df_features))
+                    angles = np.linspace(0, 2 * np.pi, len(available_features)-1, endpoint=False).tolist()
+                    angles += angles[:1]  # Close the loop
+                    
+                    # Select samples evenly spaced by ΔH
+                    df_sorted = df_features.sort_values('delta_H')
+                    indices = np.linspace(0, len(df_sorted)-1, n_radar, dtype=int)
+                    radar_data = df_sorted.iloc[indices]
+                    
+                    # Plot radar charts
+                    for i, (idx, data) in enumerate(radar_data.iterrows()):
+                        values = [data[f] for f in available_features[:-1]]  # Exclude ΔH
+                        # Normalize values
+                        values_norm = []
+                        for v, f in zip(values, available_features[:-1]):
+                            min_val = df_features[f].min()
+                            max_val = df_features[f].max()
+                            if max_val > min_val:
+                                values_norm.append((v - min_val) / (max_val - min_val))
+                            else:
+                                values_norm.append(0.5)
+                        values_norm += values_norm[:1]  # Close the loop
+                        
+                        ax3.plot(angles, values_norm, 'o-', linewidth=2, 
+                                label=f'ΔH = {data["delta_H"]:.0f} kJ/mol')
+                        ax3.fill(angles, values_norm, alpha=0.25)
+                else:
+                    ax3.text(0.5, 0.5, 'Insufficient data for radar charts', 
+                            ha='center', va='center', transform=ax3.transAxes)
+                
+                ax3.set_xticks(angles[:-1] if len(df_features) >= 4 else [])
+                ax3.set_xticklabels([f.replace('_', ' ').title() for f in available_features[:-1]] 
+                                   if len(df_features) >= 4 else [], size=8)
+                ax3.set_ylim(0, 1)
+                ax3.set_title('Radar Plots: Characteristic Compositions', 
+                              fontsize=12, fontweight='bold')
+                if len(df_features) >= 4:
+                    ax3.legend(loc='upper left', bbox_to_anchor=(1.05, 1.0), fontsize=8)
+                ax3.grid(True)
+                
+                # Plot 4: Andrews curves
+                ax4 = axes[1, 1]
+                
+                # Create Andrews curves for different ΔH ranges - ИСПРАВЛЕНО
+                t = np.linspace(-np.pi, np.pi, 100)
+                
+                try:
+                    if df_features['delta_H'].nunique() >= 4:
+                        delta_H_bins = pd.qcut(df_features['delta_H'], q=4, labels=['Q1', 'Q2', 'Q3', 'Q4'])
+                        
+                        for bin_name, group in df_features.groupby(delta_H_bins):
+                            if len(group) > 2:
+                                group_norm = df_norm.loc[group.index, available_features[:-1]]
+                                mean_values = group_norm.mean().values
+                                
+                                # Andrews curve: f(t) = x1/√2 + x2·sin(t) + x3·cos(t) + x4·sin(2t) + ...
+                                curve = mean_values[0] / np.sqrt(2) * np.ones_like(t)
+                                for i, val in enumerate(mean_values[1:], 1):
+                                    if i % 2 == 1:
+                                        curve += val * np.sin((i+1)//2 * t)
+                                    else:
+                                        curve += val * np.cos(i//2 * t)
+                                
+                                ax4.plot(t, curve, linewidth=2, 
+                                        label=f'{bin_name} (ΔH: {group["delta_H"].mean():.0f} kJ/mol)')
+                    else:
+                        # Single curve for all data
+                        mean_values = df_norm[available_features[:-1]].mean().values
+                        curve = mean_values[0] / np.sqrt(2) * np.ones_like(t)
+                        for i, val in enumerate(mean_values[1:], 1):
+                            if i % 2 == 1:
+                                curve += val * np.sin((i+1)//2 * t)
+                            else:
+                                curve += val * np.cos(i//2 * t)
+                        ax4.plot(t, curve, linewidth=2, color='black', 
+                                label=f'All data (n={len(df_features)})')
+                except Exception as e:
+                    ax4.text(0.5, 0.5, 'Could not generate Andrews curves', 
+                            ha='center', va='center', transform=ax4.transAxes)
+                
+                ax4.set_xlabel('t', fontsize=10)
+                ax4.set_ylabel('Andrews curve value', fontsize=10)
+                ax4.set_title('Andrews Curves: Pattern Comparison', 
+                              fontsize=12, fontweight='bold')
+                ax4.legend(loc='best', fontsize=8)
+                ax4.grid(True, alpha=0.3)
+                
+                plt.suptitle('Multi-dimensional Analysis of Hydration Parameters', 
+                             fontsize=14, fontweight='bold', y=1.02)
+                plt.tight_layout()
+                return fig
+            
+            # Используем исправленную функцию
+            fig = create_enhanced_parallel_coordinates_fixed(plot_df)
             if fig:
                 st.pyplot(fig)
                 plt.close()
@@ -3942,6 +5260,7 @@ def main():
 # =============================================================================
 if __name__ == "__main__":
     main()
+
 
 
 
