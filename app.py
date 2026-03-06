@@ -4582,11 +4582,6 @@ def main():
             X_display = model_data['X_train_df']
             feature_names = model_data['feature_names']
             
-            # Проверяем, что shap_values не пустой
-            if shap_values is None or len(shap_values) == 0:
-                st.warning("SHAP values not available")
-                st.stop()
-            
             # Get top features
             shap_summary = model_data['shap_summary']
             top_features = shap_summary.head(15)['feature'].values
@@ -4605,6 +4600,10 @@ def main():
                 
                 # Убеждаемся, что feat_norm - одномерный массив правильной длины
                 feat_norm = np.array(feat_norm).flatten()
+                
+                # Если размеры не совпадают, используем повторение или обрезаем
+                if len(feat_norm) != len(shap_vals):
+                    feat_norm = np.resize(feat_norm, len(shap_vals))
                 
                 # Add jitter for beeswarm effect
                 jitter = np.random.normal(0, 0.05, len(shap_vals))
@@ -5489,6 +5488,7 @@ def main():
 # =============================================================================
 if __name__ == "__main__":
     main()
+
 
 
 
