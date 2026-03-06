@@ -4370,23 +4370,8 @@ def main():
                 st.info("SHAP analysis not available for this dataset")
         
         with tab3:
-            # Get coefficients from linear model
+            # Get coefficients from linear model (if available)
             if 'elastic_H' in model_data['models'] and hasattr(model_data['models']['elastic_H'], 'coef_'):
-                # Используем ElasticNet
-                coef_df = pd.DataFrame({
-                    'feature': model_data['feature_names'],
-                    'coefficient': model_data['models']['elastic_H'].coef_
-                }).sort_values('coefficient', ascending=False).head(15)
-            elif 'xgb_H' in model_data['models'] and hasattr(model_data['models']['xgb_H'], 'feature_importances_'):
-                # Используем важность признаков из XGBoost вместо коэффициентов
-                st.info("ElasticNet model not available. Showing feature importance instead.")
-                coef_df = pd.DataFrame({
-                    'feature': model_data['feature_names'],
-                    'coefficient': model_data['models']['xgb_H'].feature_importances_
-                }).sort_values('coefficient', ascending=False).head(15)
-            else:
-                # Создаем пустой DataFrame если ничего нет
-                coef_df = pd.DataFrame({'feature': [], 'coefficient': []})
                 coef_df = pd.DataFrame({
                     'feature': model_data['feature_names'],
                     'coefficient': model_data['models']['elastic_H'].coef_
@@ -4423,7 +4408,21 @@ def main():
                 st.pyplot(fig)
                 plt.close()
             else:
-                st.info("Coefficient analysis not available")
+                st.info("Coefficient analysis not available - using feature importance instead")
+                # Показываем важность признаков из XGBoost как альтернативу
+                if 'xgb_H' in model_data['models']:
+                    importance_df = model_data['feature_importance'].head(15)
+                    fig, ax = plt.subplots(figsize=(12, 8))
+                    bars = ax.barh(range(len(importance_df)), importance_df['importance'],
+                                  color='blue', edgecolor='black', alpha=0.7)
+                    ax.set_yticks(range(len(importance_df)))
+                    ax.set_yticklabels(importance_df['feature'])
+                    ax.set_xlabel('Feature Importance', fontsize=12)
+                    ax.set_title('XGBoost Feature Importance', fontsize=14, fontweight='bold')
+                    ax.invert_yaxis()
+                    ax.grid(True, alpha=0.3, axis='x')
+                    st.pyplot(fig)
+                    plt.close()
         
         # Prediction vs Actual plots
         st.markdown("### 📈 Prediction vs Actual (Training Data)")
@@ -5481,6 +5480,7 @@ def main():
 # =============================================================================
 if __name__ == "__main__":
     main()
+
 
 
 
