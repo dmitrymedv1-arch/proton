@@ -62,7 +62,7 @@ plt.rcParams.update({
     # Font sizes and weights
     'font.size': 10,
     'font.family': 'serif',
-    'axes.labelsize': 12,
+    'axes.labelsize': 13,
     'axes.labelweight': 'bold',
     'axes.titlesize': 12,
     'axes.titleweight': 'bold',
@@ -3942,6 +3942,7 @@ def main():
 # =============================================================================
 if __name__ == "__main__":
     main()
+
 
 
 
