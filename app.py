@@ -2478,10 +2478,29 @@ def main():
                                   label=group, c=[color], s=100, alpha=0.7,
                                   edgecolors='black', linewidth=0.5)
                         
-                        if show_trend and len(subset) >= 3:
-                            z = np.polyfit(subset['chi_B_avg'], subset['delta_H'], 1)
-                            x_trend = np.linspace(subset['chi_B_avg'].min(), subset['chi_B_avg'].max(), 50)
-                            ax.plot(x_trend, np.polyval(z, x_trend), '--', color=color, alpha=0.5)
+                        if show_trend and len(subset) >= 4:
+                            if subset['chi_B_avg'].nunique() >= 2:
+                                try:
+                                    x_clean = subset['chi_B_avg'].dropna()
+                                    y_clean = subset['delta_H'].dropna()
+                                    
+                                    if len(x_clean) >= 4 and len(y_clean) >= 4:
+                                        from scipy import stats
+                                        
+                                        corr, p_value = stats.pearsonr(x_clean, y_clean)
+                                        
+                                        if abs(corr) > 0.3 or p_value < 0.1:
+                                            z = np.polyfit(x_clean, y_clean, 1)
+                                            x_trend = np.linspace(x_clean.min(), x_clean.max(), 50)
+                                            ax.plot(x_trend, np.polyval(z, x_trend), '--', 
+                                                   color=color, alpha=0.5, linewidth=1.5)
+                                            
+                                            ax.text(0.02, 0.98 - 0.05 * list(groups).index(group), 
+                                                   f'{group}: r = {corr:.2f}{"*" if p_value < 0.05 else ""}', 
+                                                   transform=ax.transAxes, color=color, fontsize=8,
+                                                   verticalalignment='top')
+                                except (np.linalg.LinAlgError, ValueError, TypeError) as e:
+                                    pass
                     
                     ax.set_xlabel('Average B-site Electronegativity (χ_B)', fontsize=12)
                     ax.set_ylabel('ΔH (kJ mol⁻¹)', fontsize=12)
@@ -2512,8 +2531,12 @@ def main():
                                   label=group, c=[color], s=100, alpha=0.7,
                                   edgecolors='black', linewidth=0.5)
                         
-                        if show_trend and len(subset) >= 3:
-                            z = np.polyfit(subset['chi_diff_AB'], subset['delta_H'], 1)
+                        if show_trend and len(subset) >= 4 and subset['chi_diff_AB'].nunique() >= 2:
+                            try:
+                                x_clean = subset['chi_diff_AB'].dropna()
+                                y_clean = subset['delta_H'].dropna()
+                                if len(x_clean) >= 4 and len(y_clean) >= 4:
+                                    z = np.polyfit(x_clean, y_clean, 1)
                             x_trend = np.linspace(subset['chi_diff_AB'].min(), subset['chi_diff_AB'].max(), 50)
                             ax.plot(x_trend, np.polyval(z, x_trend), '--', color=color, alpha=0.5)
                     
@@ -2538,8 +2561,12 @@ def main():
                                   label=group, c=[color], s=100, alpha=0.7,
                                   edgecolors='black', linewidth=0.5)
                         
-                        if show_trend and len(subset) >= 3:
-                            z = np.polyfit(subset['polarizability_avg'], subset['delta_H'], 1)
+                        if show_trend and len(subset) >= 4 and subset['polarizability_avg'].nunique() >= 2:
+                            try:
+                                x_clean = subset['polarizability_avg'].dropna()
+                                y_clean = subset['delta_H'].dropna()
+                                if len(x_clean) >= 4 and len(y_clean) >= 4:
+                                    z = np.polyfit(x_clean, y_clean, 1)
                             x_trend = np.linspace(subset['polarizability_avg'].min(), subset['polarizability_avg'].max(), 50)
                             ax.plot(x_trend, np.polyval(z, x_trend), '--', color=color, alpha=0.5)
                     
@@ -2568,8 +2595,12 @@ def main():
                                   label=group, c=[color], s=100, alpha=0.7,
                                   edgecolors='black', linewidth=0.5)
                         
-                        if show_trend and len(subset) >= 3:
-                            z = np.polyfit(subset['ionization_avg'], subset['delta_H'], 1)
+                        if show_trend and len(subset) >= 4 and subset['ionization_avg'].nunique() >= 2:
+                            try:
+                                x_clean = subset['ionization_avg'].dropna()
+                                y_clean = subset['delta_H'].dropna()
+                                if len(x_clean) >= 4 and len(y_clean) >= 4:
+                                    z = np.polyfit(x_clean, y_clean, 1)
                             x_trend = np.linspace(subset['ionization_avg'].min(), subset['ionization_avg'].max(), 50)
                             ax.plot(x_trend, np.polyval(z, x_trend), '--', color=color, alpha=0.5)
                     
@@ -2592,8 +2623,12 @@ def main():
                                   label=group, c=[color], s=100, alpha=0.7,
                                   edgecolors='black', linewidth=0.5)
                         
-                        if show_trend and len(subset) >= 3:
-                            z = np.polyfit(subset['charge_density_B'], subset['delta_H'], 1)
+                        if show_trend and len(subset) >= 4 and subset['charge_density_B'].nunique() >= 2:
+                            try:
+                                x_clean = subset['charge_density_B'].dropna()
+                                y_clean = subset['delta_H'].dropna()
+                                if len(x_clean) >= 4 and len(y_clean) >= 4:
+                                    z = np.polyfit(x_clean, y_clean, 1)
                             x_trend = np.linspace(subset['charge_density_B'].min(), subset['charge_density_B'].max(), 50)
                             ax.plot(x_trend, np.polyval(z, x_trend), '--', color=color, alpha=0.5)
                     
@@ -5260,6 +5295,7 @@ def main():
 # =============================================================================
 if __name__ == "__main__":
     main()
+
 
 
 
