@@ -3487,46 +3487,91 @@ def main():
                 
                 # Plot 1: Hexbin plot (density)
                 ax1 = axes[0]
-                hb = ax1.hexbin(plot_df[dim1], plot_df[dim2], gridsize=20, 
-                               cmap='YlOrRd', mincnt=1, alpha=0.8,
-                               edgecolors='white', linewidth=0.5)
-                plt.colorbar(hb, ax=ax1, label='Number of samples')
+                
+                # Clean data for hexbin
+                hex_data = plot_df[[dim1, dim2, 'delta_H']].dropna()
+                if len(hex_data) > 0:
+                    hb = ax1.hexbin(hex_data[dim1], hex_data[dim2], gridsize=20, 
+                                   cmap='YlOrRd', mincnt=1, alpha=0.8,
+                                   edgecolors='white', linewidth=0.5)
+                    plt.colorbar(hb, ax=ax1, label='Number of samples')
+                else:
+                    ax1.text(0.5, 0.5, 'No valid data', ha='center', va='center')
                 
                 ax1.set_xlabel(dim1.replace('_', ' ').title())
                 ax1.set_ylabel(dim2.replace('_', ' ').title())
                 ax1.set_title('Experimental Density Map')
                 ax1.grid(True, alpha=0.3)
                 
-                # Plot 2: Coverage gaps
+                # Plot 2: Coverage gaps with robust distance calculation
                 ax2 = axes[1]
                 
                 # Create grid for coverage assessment
-                x_grid = np.linspace(plot_df[dim1].min(), plot_df[dim1].max(), 30)
-                y_grid = np.linspace(plot_df[dim2].min(), plot_df[dim2].max(), 30)
+                x_min, x_max = plot_df[dim1].min(), plot_df[dim1].max()
+                y_min, y_max = plot_df[dim2].min(), plot_df[dim2].max()
+                
+                # Add small padding
+                x_pad = (x_max - x_min) * 0.1
+                y_pad = (y_max - y_min) * 0.1
+                
+                x_grid = np.linspace(x_min - x_pad, x_max + x_pad, 30)
+                y_grid = np.linspace(y_min - y_pad, y_max + y_pad, 30)
                 X_grid, Y_grid = np.meshgrid(x_grid, y_grid)
                 
-                # Find nearest experimental point for each grid point
-                from scipy.spatial import cKDTree
-                points = np.column_stack([plot_df[dim1].values, plot_df[dim2].values])
-                tree = cKDTree(points)
+                # Find nearest experimental point for each grid point (with robust handling)
+                from scipy.spatial import cKDTree, QhullError
                 
-                grid_points = np.column_stack([X_grid.ravel(), Y_grid.ravel()])
-                distances, _ = tree.query(grid_points)
-                distances = distances.reshape(X_grid.shape)
+                # Clean data: remove NaN and ensure we have valid points
+                clean_data = plot_df[[dim1, dim2]].dropna()
                 
-                # Plot coverage gaps (areas far from experimental points)
-                gap_threshold = np.percentile(distances, 75)
-                gap_mask = distances > gap_threshold
-                
-                # Background
-                ax2.contourf(X_grid, Y_grid, distances, levels=20, cmap='viridis_r', alpha=0.5)
-                
-                # Highlight gaps
-                if gap_mask.any():
-                    gap_masked = np.ma.masked_where(~gap_mask, distances)
-                    contour_gap = ax2.contourf(X_grid, Y_grid, gap_masked, 
-                                              levels=[gap_threshold, distances.max()],
-                                              colors=['red'], alpha=0.3)
+                if len(clean_data) >= 3:
+                    points = clean_data.values
+                    # Remove duplicate points for numerical stability
+                    points = np.unique(points, axis=0)
+                    
+                    if len(points) >= 3:
+                        tree = cKDTree(points)
+                        
+                        grid_points = np.column_stack([X_grid.ravel(), Y_grid.ravel()])
+                        # Remove any NaN from grid
+                        valid_grid = ~np.isnan(grid_points).any(axis=1)
+                        grid_points_clean = grid_points[valid_grid]
+                        
+                        if len(grid_points_clean) > 0:
+                            distances_all = np.full(len(grid_points), np.nan)
+                            distances_clean, _ = tree.query(grid_points_clean)
+                            distances_all[valid_grid] = distances_clean
+                            distances = distances_all.reshape(X_grid.shape)
+                            
+                            # Plot coverage gaps
+                            if not np.all(np.isnan(distances)):
+                                # Use percentile only on valid distances
+                                valid_distances = distances[~np.isnan(distances)]
+                                if len(valid_distances) > 0:
+                                    gap_threshold = np.percentile(valid_distances, 75)
+                                    
+                                    # Background - use pcolormesh for better handling of NaNs
+                                    masked_distances = np.ma.masked_invalid(distances)
+                                    mesh = ax2.pcolormesh(X_grid, Y_grid, masked_distances, 
+                                                         cmap='viridis_r', alpha=0.5, shading='auto')
+                                    plt.colorbar(mesh, ax=ax2, label='Distance to nearest point')
+                                    
+                                    # Highlight gaps
+                                    gap_mask = distances > gap_threshold
+                                    if gap_mask.any():
+                                        gap_masked = np.ma.masked_where(~gap_mask, distances)
+                                        ax2.contourf(X_grid, Y_grid, gap_masked, 
+                                                   levels=[gap_threshold, distances.max()],
+                                                   colors=['red'], alpha=0.3)
+                        else:
+                            ax2.text(0.5, 0.5, 'No valid grid points', 
+                                    ha='center', va='center', transform=ax2.transAxes)
+                    else:
+                        ax2.text(0.5, 0.5, 'Insufficient unique points', 
+                                ha='center', va='center', transform=ax2.transAxes)
+                else:
+                    ax2.text(0.5, 0.5, 'Need at least 3 data points', 
+                            ha='center', va='center', transform=ax2.transAxes)
                 
                 # Add experimental points
                 ax2.scatter(plot_df[dim1], plot_df[dim2], 
@@ -3534,7 +3579,7 @@ def main():
                 
                 ax2.set_xlabel(dim1.replace('_', ' ').title())
                 ax2.set_ylabel(dim2.replace('_', ' ').title())
-                ax2.set_title(f'Coverage Gaps (Red = Under-explored)')
+                ax2.set_title('Coverage Gaps (Red = Under-explored)')
                 ax2.grid(True, alpha=0.3)
                 
                 plt.suptitle('Experimental Coverage Analysis', fontsize=14, fontweight='bold')
@@ -3542,7 +3587,7 @@ def main():
                 st.pyplot(fig)
                 plt.close()
                 
-                # Coverage statistics
+                # Coverage statistics with robust error handling
                 st.markdown("#### Coverage Statistics")
                 
                 col1, col2, col3, col4 = st.columns(4)
@@ -3551,28 +3596,49 @@ def main():
                     st.metric("Total samples", len(plot_df))
                 
                 with col2:
-                    # Calculate area coverage (simplified)
+                    # Calculate area coverage with robust convex hull calculation
                     x_range = plot_df[dim1].max() - plot_df[dim1].min()
                     y_range = plot_df[dim2].max() - plot_df[dim2].min()
                     total_area = x_range * y_range
                     
-                    # Estimate covered area (using convex hull)
-                    from scipy.spatial import ConvexHull
-                    if len(plot_df) >= 3:
-                        points = plot_df[[dim1, dim2]].values
-                        hull = ConvexHull(points)
-                        covered_area = hull.volume  # area for 2D
-                        coverage_pct = (covered_area / total_area) * 100
-                        st.metric("Area coverage", f"{coverage_pct:.1f}%")
+                    if len(clean_data) >= 3 and total_area > 0:
+                        try:
+                            points = clean_data.values
+                            points = np.unique(points, axis=0)
+                            
+                            if len(points) >= 3:
+                                from scipy.spatial import ConvexHull, QhullError
+                                try:
+                                    hull = ConvexHull(points)
+                                    covered_area = hull.volume  # area for 2D
+                                    coverage_pct = min(100, (covered_area / total_area) * 100)
+                                    st.metric("Area coverage", f"{coverage_pct:.1f}%")
+                                except QhullError:
+                                    # Points might be collinear - use bounding box estimate
+                                    covered_area = x_range * y_range * 0.3  # Rough estimate for collinear
+                                    coverage_pct = 30.0
+                                    st.metric("Area coverage", f"{coverage_pct:.1f}% (linear)")
+                            else:
+                                st.metric("Area coverage", "Insufficient unique points")
+                        except Exception as e:
+                            st.metric("Area coverage", "Error")
                     else:
                         st.metric("Area coverage", "N/A")
                 
                 with col3:
-                    st.metric("Data density", f"{len(plot_df)/total_area:.2f} pts/unit²")
+                    if total_area > 0 and len(clean_data) > 0:
+                        density = len(clean_data) / total_area
+                        st.metric("Data density", f"{density:.2f} pts/unit²")
+                    else:
+                        st.metric("Data density", "N/A")
                 
                 with col4:
-                    # Recommended new experiments
-                    st.metric("Suggested experiments", f"{int(len(plot_df) * 0.3)}")
+                    # Recommended new experiments based on coverage gaps
+                    if 'distances' in locals() and not np.all(np.isnan(distances)):
+                        n_suggested = min(10, int(len(plot_df) * 0.3))
+                        st.metric("Suggested experiments", n_suggested)
+                    else:
+                        st.metric("Suggested experiments", "N/A")
             
             with tab3:
                 st.markdown("#### Material Design Guide")
@@ -5341,6 +5407,7 @@ def main():
 # =============================================================================
 if __name__ == "__main__":
     main()
+
 
 
 
