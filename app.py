@@ -4598,13 +4598,18 @@ def main():
                 else:
                     feat_norm = np.zeros_like(feat_vals)
                 
-                # Add jitter for beeswarm effect
-                jitter = np.random.normal(0, 0.05, len(shap_vals))
-                y_jitter = i + jitter
+                # Убеждаемся, что feat_norm - одномерный массив правильной длины
+                feat_norm = np.array(feat_norm).flatten()
+                
+                # Проверяем соответствие размеров
+                if len(feat_norm) != len(shap_vals):
+                    # Если размеры не совпадают, используем повторение или обрезаем
+                    feat_norm = np.resize(feat_norm, len(shap_vals))
                 
                 scatter = ax.scatter(shap_vals, y_jitter, c=feat_norm, 
                                    cmap='coolwarm', alpha=0.6, s=30,
-                                   edgecolors='black', linewidth=0.3)
+                                   edgecolors='black', linewidth=0.3,
+                                   norm=plt.Normalize(vmin=0, vmax=1))
                 
                 ax.axvline(x=0, color='gray', linestyle='--', linewidth=0.5, alpha=0.5)
             
@@ -5480,6 +5485,7 @@ def main():
 # =============================================================================
 if __name__ == "__main__":
     main()
+
 
 
 
