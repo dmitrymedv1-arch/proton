@@ -59,31 +59,52 @@ MODERN_COLORS = {
 plt.style.use('seaborn-v0_8-whitegrid')
 sns.set_palette("husl")
 plt.rcParams.update({
-    'font.size': 11,
-    'font.family': 'sans-serif',
-    'font.sans-serif': ['Arial', 'DejaVu Sans'],
-    'axes.labelsize': 12,
-    'axes.labelweight': 'normal',
-    'axes.titlesize': 13,
+    # Font sizes and weights
+    'font.size': 10,
+    'font.family': 'serif',
+    'axes.labelsize': 11,
+    'axes.labelweight': 'bold',
+    'axes.titlesize': 12,
     'axes.titleweight': 'bold',
-    'axes.facecolor': MODERN_COLORS['background'],
-    'axes.edgecolor': MODERN_COLORS['grid'],
+    
+    # Axes appearance
+    'axes.facecolor': 'white',
+    'axes.edgecolor': 'black',
     'axes.linewidth': 1.0,
-    'axes.grid': True,
-    'grid.color': MODERN_COLORS['grid'],
-    'grid.alpha': 0.3,
-    'xtick.color': MODERN_COLORS['text'],
-    'ytick.color': MODERN_COLORS['text'],
+    'axes.grid': False,
+    
+    # Tick parameters
+    'xtick.color': 'black',
+    'ytick.color': 'black',
     'xtick.labelsize': 10,
     'ytick.labelsize': 10,
+    'xtick.direction': 'out',
+    'ytick.direction': 'out',
+    'xtick.major.size': 4,
+    'xtick.minor.size': 2,
+    'ytick.major.size': 4,
+    'ytick.minor.size': 2,
+    'xtick.major.width': 0.8,
+    'ytick.major.width': 0.8,
+    
+    # Legend
     'legend.fontsize': 10,
     'legend.frameon': True,
     'legend.framealpha': 0.9,
-    'legend.edgecolor': MODERN_COLORS['grid'],
-    'figure.facecolor': 'white',
-    'savefig.dpi': 300,
+    'legend.edgecolor': 'black',
+    'legend.fancybox': False,
+    
+    # Figure
+    'figure.dpi': 600,
+    'savefig.dpi': 600,
     'savefig.bbox': 'tight',
-    'figure.dpi': 100
+    'savefig.pad_inches': 0.1,
+    'figure.facecolor': 'white',
+    
+    # Lines
+    'lines.linewidth': 1.5,
+    'lines.markersize': 6,
+    'errorbar.capsize': 3,
 })
 
 # =============================================================================
@@ -3921,4 +3942,5 @@ def main():
 # =============================================================================
 if __name__ == "__main__":
     main()
+
 
