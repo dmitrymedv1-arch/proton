@@ -3366,8 +3366,30 @@ def main():
                 
                 # Interpolate ΔH
                 from scipy.interpolate import griddata
-                Z = griddata((plot_df[x_axis], plot_df[y_axis]), plot_df['delta_H'], 
-                            (X, Y), method='cubic')
+                
+                # Check if we have enough points for interpolation
+                if len(plot_df) < 4:
+                    st.warning("Insufficient data points for interpolation (need at least 4)")
+                    Z = np.full_like(X, np.nan)
+                else:
+                    try:
+                        # Try cubic interpolation first (requires at least 4 points)
+                        Z = griddata((plot_df[x_axis], plot_df[y_axis]), plot_df['delta_H'], 
+                                    (X, Y), method='cubic')
+                        
+                        # Check if cubic interpolation produced any NaNs (happens at edges)
+                        if np.isnan(Z).all():
+                            # Fall back to linear interpolation
+                            Z = griddata((plot_df[x_axis], plot_df[y_axis]), plot_df['delta_H'], 
+                                        (X, Y), method='linear')
+                    except Exception as e:
+                        # If cubic fails, try linear
+                        try:
+                            Z = griddata((plot_df[x_axis], plot_df[y_axis]), plot_df['delta_H'], 
+                                        (X, Y), method='linear')
+                        except Exception as e:
+                            st.warning(f"Interpolation failed: {str(e)}")
+                            Z = np.full_like(X, np.nan)
                 
                 fig, axes = plt.subplots(1, 3, figsize=(18, 5))
                 
@@ -3576,8 +3598,24 @@ def main():
                 X, Y = np.meshgrid(x_grid, y_grid)
                 
                 # Interpolate ΔH
-                Z = griddata((plot_df['r_B_avg'], plot_df['chi_diff']), plot_df['delta_H'], 
-                            (X, Y), method='cubic')
+                from scipy.interpolate import griddata
+                
+                if len(plot_df) < 4:
+                    st.warning("Insufficient data for interpolation")
+                    Z = np.full_like(X, np.nan)
+                else:
+                    try:
+                        Z = griddata((plot_df['r_B_avg'], plot_df['chi_diff']), plot_df['delta_H'], 
+                                    (X, Y), method='cubic')
+                        if np.isnan(Z).all():
+                            Z = griddata((plot_df['r_B_avg'], plot_df['chi_diff']), plot_df['delta_H'], 
+                                        (X, Y), method='linear')
+                    except:
+                        try:
+                            Z = griddata((plot_df['r_B_avg'], plot_df['chi_diff']), plot_df['delta_H'], 
+                                        (X, Y), method='linear')
+                        except:
+                            Z = np.full_like(X, np.nan)
                 
                 # Find promising regions (ΔH < -100) that are far from existing points
                 promising_mask = Z < -100
@@ -5303,6 +5341,7 @@ def main():
 # =============================================================================
 if __name__ == "__main__":
     main()
+
 
 
 
