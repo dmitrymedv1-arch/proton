@@ -76,8 +76,8 @@ plt.rcParams.update({
     # Tick parameters
     'xtick.color': 'black',
     'ytick.color': 'black',
-    'xtick.labelsize': 10,
-    'ytick.labelsize': 10,
+    'xtick.labelsize': 12,
+    'ytick.labelsize': 12,
     'xtick.direction': 'out',
     'ytick.direction': 'out',
     'xtick.major.size': 4,
@@ -3942,5 +3942,6 @@ def main():
 # =============================================================================
 if __name__ == "__main__":
     main()
+
 
 
