@@ -4371,7 +4371,22 @@ def main():
         
         with tab3:
             # Get coefficients from linear model
-            if hasattr(model_data['models']['elastic_H'], 'coef_'):
+            if 'elastic_H' in model_data['models'] and hasattr(model_data['models']['elastic_H'], 'coef_'):
+                # Используем ElasticNet
+                coef_df = pd.DataFrame({
+                    'feature': model_data['feature_names'],
+                    'coefficient': model_data['models']['elastic_H'].coef_
+                }).sort_values('coefficient', ascending=False).head(15)
+            elif 'xgb_H' in model_data['models'] and hasattr(model_data['models']['xgb_H'], 'feature_importances_'):
+                # Используем важность признаков из XGBoost вместо коэффициентов
+                st.info("ElasticNet model not available. Showing feature importance instead.")
+                coef_df = pd.DataFrame({
+                    'feature': model_data['feature_names'],
+                    'coefficient': model_data['models']['xgb_H'].feature_importances_
+                }).sort_values('coefficient', ascending=False).head(15)
+            else:
+                # Создаем пустой DataFrame если ничего нет
+                coef_df = pd.DataFrame({'feature': [], 'coefficient': []})
                 coef_df = pd.DataFrame({
                     'feature': model_data['feature_names'],
                     'coefficient': model_data['models']['elastic_H'].coef_
@@ -5466,6 +5481,7 @@ def main():
 # =============================================================================
 if __name__ == "__main__":
     main()
+
 
 
 
