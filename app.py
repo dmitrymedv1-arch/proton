@@ -2537,8 +2537,10 @@ def main():
                                 y_clean = subset['delta_H'].dropna()
                                 if len(x_clean) >= 4 and len(y_clean) >= 4:
                                     z = np.polyfit(x_clean, y_clean, 1)
-                            x_trend = np.linspace(subset['chi_diff_AB'].min(), subset['chi_diff_AB'].max(), 50)
-                            ax.plot(x_trend, np.polyval(z, x_trend), '--', color=color, alpha=0.5)
+                                    x_trend = np.linspace(subset['chi_diff_AB'].min(), subset['chi_diff_AB'].max(), 50)
+                                    ax.plot(x_trend, np.polyval(z, x_trend), '--', color=color, alpha=0.5)
+                            except (np.linalg.LinAlgError, ValueError, TypeError) as e:
+                                pass
                     
                     ax.set_xlabel('Electronegativity Difference (χ_B - χ_A)', fontsize=12)
                     ax.set_ylabel('ΔH (kJ mol⁻¹)', fontsize=12)
@@ -5295,6 +5297,7 @@ def main():
 # =============================================================================
 if __name__ == "__main__":
     main()
+
 
 
 
