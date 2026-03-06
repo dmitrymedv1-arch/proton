@@ -62,7 +62,7 @@ plt.rcParams.update({
     # Font sizes and weights
     'font.size': 10,
     'font.family': 'serif',
-    'axes.labelsize': 11,
+    'axes.labelsize': 12,
     'axes.labelweight': 'bold',
     'axes.titlesize': 12,
     'axes.titleweight': 'bold',
@@ -76,8 +76,8 @@ plt.rcParams.update({
     # Tick parameters
     'xtick.color': 'black',
     'ytick.color': 'black',
-    'xtick.labelsize': 12,
-    'ytick.labelsize': 12,
+    'xtick.labelsize': 10,
+    'ytick.labelsize': 10,
     'xtick.direction': 'out',
     'ytick.direction': 'out',
     'xtick.major.size': 4,
@@ -88,7 +88,7 @@ plt.rcParams.update({
     'ytick.major.width': 0.8,
     
     # Legend
-    'legend.fontsize': 10,
+    'legend.fontsize': 11,
     'legend.frameon': True,
     'legend.framealpha': 0.9,
     'legend.edgecolor': 'black',
@@ -3942,6 +3942,7 @@ def main():
 # =============================================================================
 if __name__ == "__main__":
     main()
+
 
 
 
