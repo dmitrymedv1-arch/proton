@@ -1629,62 +1629,102 @@ def train_prediction_models(df):
     X_scaled = scaler.fit_transform(X)
     
     # =========================================================
-    # OPTIMIZED: Only 2 main models for speed
+    # OPTIMIZED: Three ensemble models for robust predictions
     # =========================================================
     
-    # 1. XGBoost (reduced complexity)
+    # 1. XGBoost - gradient boosting with regularization
     xgb_model_H = xgb.XGBRegressor(
-        n_estimators=100,  # Reduced from 200
-        max_depth=4,        # Reduced from 6
-        learning_rate=0.1,
-        subsample=0.8,
-        colsample_bytree=0.8,
+        n_estimators=100,        # Reduced from 200 for speed
+        max_depth=4,              # Reduced from 6 to prevent overfitting
+        learning_rate=0.1,        # Moderate learning rate
+        subsample=0.8,            # Use 80% of data per tree
+        colsample_bytree=0.8,     # Use 80% of features per tree
+        reg_alpha=0.1,            # L1 regularization
+        reg_lambda=1.0,           # L2 regularization
         random_state=42,
-        n_jobs=-1,
+        n_jobs=-1,                 # Use all CPU cores
         verbosity=0
     )
+    
     xgb_model_S = xgb.XGBRegressor(
         n_estimators=100,
         max_depth=4,
         learning_rate=0.1,
         subsample=0.8,
         colsample_bytree=0.8,
+        reg_alpha=0.1,
+        reg_lambda=1.0,
         random_state=42,
         n_jobs=-1,
         verbosity=0
     )
     
-    # Train quickly
-    xgb_model_H.fit(X_scaled, y_H)
-    xgb_model_S.fit(X_scaled, y_S)
-    
-    # 2. Random Forest (faster than Gradient Boosting)
+    # 2. Random Forest - bagging ensemble for stability
     rf_model_H = RandomForestRegressor(
-        n_estimators=100,   # Reduced from 200
-        max_depth=6,         # Reduced from 8
-        min_samples_split=5,
-        min_samples_leaf=2,
+        n_estimators=100,         # Reduced from 200 for speed
+        max_depth=6,               # Reduced from 8
+        min_samples_split=5,       # Minimum samples to split a node
+        min_samples_leaf=2,        # Minimum samples in a leaf
+        max_features='sqrt',       # Use sqrt(n_features) per split
+        bootstrap=True,             # Use bootstrap samples
         random_state=42,
-        n_jobs=-1
+        n_jobs=-1                   # Use all CPU cores
     )
+    
     rf_model_S = RandomForestRegressor(
         n_estimators=100,
         max_depth=6,
         min_samples_split=5,
         min_samples_leaf=2,
+        max_features='sqrt',
+        bootstrap=True,
         random_state=42,
         n_jobs=-1
     )
     
-    rf_model_H.fit(X_scaled, y_H)
-    rf_model_S.fit(X_scaled, y_S)
+    # 3. Gradient Boosting - sequential boosting for accuracy
+    gb_model_H = GradientBoostingRegressor(
+        n_estimators=100,          # Number of boosting stages
+        max_depth=4,                # Tree depth
+        learning_rate=0.1,          # Shrinkage factor
+        subsample=0.8,              # Stochastic gradient boosting fraction
+        min_samples_split=5,        # Minimum samples to split
+        min_samples_leaf=2,         # Minimum samples in leaf
+        max_features='sqrt',        # Feature fraction per tree
+        random_state=42
+    )
+    
+    gb_model_S = GradientBoostingRegressor(
+        n_estimators=100,
+        max_depth=4,
+        learning_rate=0.1,
+        subsample=0.8,
+        min_samples_split=5,
+        min_samples_leaf=2,
+        max_features='sqrt',
+        random_state=42
+    )
+    
+    # Train all models
+    with st.spinner("Training XGBoost models..."):
+        xgb_model_H.fit(X_scaled, y_H)
+        xgb_model_S.fit(X_scaled, y_S)
+    
+    with st.spinner("Training Random Forest models..."):
+        rf_model_H.fit(X_scaled, y_H)
+        rf_model_S.fit(X_scaled, y_S)
+    
+    with st.spinner("Training Gradient Boosting models..."):
+        gb_model_H.fit(X_scaled, y_H)
+        gb_model_S.fit(X_scaled, y_S)
     
     # OPTIMIZED: Fast cross-validation (only 3 folds)
     from sklearn.model_selection import cross_val_score
+    
     cv_scores_H = cross_val_score(xgb_model_H, X_scaled, y_H, cv=min(3, len(X)), scoring='r2', n_jobs=-1)
     cv_scores_S = cross_val_score(xgb_model_S, X_scaled, y_S, cv=min(3, len(X)), scoring='r2', n_jobs=-1)
     
-    # Feature importance
+    # Feature importance from XGBoost (for consistency)
     feature_importance_H = pd.DataFrame({
         'feature': feature_names,
         'importance': xgb_model_H.feature_importances_
@@ -1717,15 +1757,19 @@ def train_prediction_models(df):
                 'feature': feature_names,
                 'mean_abs_shap': np.abs(shap_values_H).mean(axis=0)
             }).sort_values('mean_abs_shap', ascending=False)
-        except:
-            pass  # Silently fail if SHAP fails
+        except Exception as e:
+            # Silently fail if SHAP fails (e.g., on ARM architecture)
+            pass
     
+    # Return all trained models and metadata
     return {
         'models': {
             'xgb_H': xgb_model_H,
             'xgb_S': xgb_model_S,
             'rf_H': rf_model_H,
-            'rf_S': rf_model_S
+            'rf_S': rf_model_S,
+            'gb_H': gb_model_H,
+            'gb_S': gb_model_S
         },
         'scaler': scaler,
         'feature_names': feature_names,
@@ -4088,13 +4132,28 @@ def main():
         pred_H_rf = model_data['models']['rf_H'].predict(X_pred_scaled)[0]
         pred_S_rf = model_data['models']['rf_S'].predict(X_pred_scaled)[0]
         
-        pred_H_gb = model_data['models']['gb_H'].predict(X_pred_scaled)[0]
-        pred_S_gb = model_data['models']['gb_S'].predict(X_pred_scaled)[0]
-        
-        # Ensemble prediction (weighted average)
-        weights = [0.5, 0.3, 0.2]  # XGBoost, RF, GB weights
-        pred_H = (weights[0]*pred_H_xgb + weights[1]*pred_H_rf + weights[2]*pred_H_gb)
-        pred_S = (weights[0]*pred_S_xgb + weights[1]*pred_S_rf + weights[2]*pred_S_gb)
+        # Check if Gradient Boosting models exist
+        if 'gb_H' in model_data['models']:
+            pred_H_gb = model_data['models']['gb_H'].predict(X_pred_scaled)[0]
+            pred_S_gb = model_data['models']['gb_S'].predict(X_pred_scaled)[0]
+            
+            # Ensemble prediction with all three models
+            weights = [0.5, 0.3, 0.2]  # XGBoost, RF, GB weights
+            pred_H = (weights[0]*pred_H_xgb + weights[1]*pred_H_rf + weights[2]*pred_H_gb)
+            pred_S = (weights[0]*pred_S_xgb + weights[1]*pred_S_rf + weights[2]*pred_S_gb)
+            
+            # Calculate uncertainty (standard deviation of predictions)
+            H_std = np.std([pred_H_xgb, pred_H_rf, pred_H_gb])
+            S_std = np.std([pred_S_xgb, pred_S_rf, pred_S_gb])
+        else:
+            # Fallback to two models
+            weights = [0.6, 0.4]  # XGBoost, RF weights
+            pred_H = weights[0]*pred_H_xgb + weights[1]*pred_H_rf
+            pred_S = weights[0]*pred_S_xgb + weights[1]*pred_S_rf
+            
+            # Calculate uncertainty with two models
+            H_std = np.std([pred_H_xgb, pred_H_rf])
+            S_std = np.std([pred_S_xgb, pred_S_rf])
         
         # Calculate uncertainty (standard deviation of predictions)
         H_std = np.std([pred_H_xgb, pred_H_rf, pred_H_gb])
@@ -5407,6 +5466,7 @@ def main():
 # =============================================================================
 if __name__ == "__main__":
     main()
+
 
 
 
