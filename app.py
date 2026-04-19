@@ -4736,195 +4736,195 @@ def main():
         with tab_mixed_3d:
             st.markdown("### 3D: Property Landscape (x vs y)")
                     
-                    col1, col2 = st.columns(2)
+            col1, col2 = st.columns(2)
                     
-                    with col1:
-                        B1_3d = st.selectbox("B1 (base)", ['Zr', 'Ce', 'Sn', 'Ti', 'Hf'], key="3d_B1")
+            with col1:
+                B1_3d = st.selectbox("B1 (base)", ['Zr', 'Ce', 'Sn', 'Ti', 'Hf'], key="3d_B1")
                     
-                    with col2:
-                        B2_3d_options = [b for b in ['Zr', 'Ce', 'Sn', 'Ti', 'Hf'] if b != B1_3d]
-                        B2_3d = st.selectbox("B2 (substituent)", B2_3d_options, key="3d_B2")
+            with col2:
+                B2_3d_options = [b for b in ['Zr', 'Ce', 'Sn', 'Ti', 'Hf'] if b != B1_3d]
+                B2_3d = st.selectbox("B2 (substituent)", B2_3d_options, key="3d_B2")
                     
-                    # Дополнительные настройки в expander
-                    with st.expander("⚙️ Advanced Settings (Grid Resolution)", expanded=False):
-                        col1, col2, col3 = st.columns(3)
+            # Дополнительные настройки в expander
+            with st.expander("⚙️ Advanced Settings (Grid Resolution)", expanded=False):
+                col1, col2, col3 = st.columns(3)
                         
-                        with col1:
-                            y_step = st.select_slider(
-                                "Dopant (y) step size",
-                                options=[0.01, 0.02, 0.03, 0.05, 0.1],
-                                value=0.05,
-                                key="y_step_3d"
-                            )
-                            st.caption(f"y range: 0 → 0.3, {int(0.3 / y_step) + 1} points")
+                with col1:
+                    y_step = st.select_slider(
+                        "Dopant (y) step size",
+                        options=[0.01, 0.02, 0.03, 0.05, 0.1],
+                        value=0.05,
+                        key="y_step_3d"
+                    )
+                    st.caption(f"y range: 0 → 0.3, {int(0.3 / y_step) + 1} points")
                         
-                        with col2:
-                            x_step = st.select_slider(
-                                "B2 (x) step size",
-                                options=[0.05, 0.1, 0.15, 0.2],
-                                value=0.1,
-                                key="x_step_3d"
-                            )
-                            st.caption(f"x range: 0 → 1-y, variable points")
+                with col2:
+                    x_step = st.select_slider(
+                        "B2 (x) step size",
+                        options=[0.05, 0.1, 0.15, 0.2],
+                        value=0.1,
+                        key="x_step_3d"
+                    )
+                    st.caption(f"x range: 0 → 1-y, variable points")
                         
-                        with col3:
-                            interpolation_method = st.selectbox(
-                                "Interpolation for smoothness",
-                                ['None', 'Linear', 'Cubic'],
-                                index=0,
-                                key="interp_3d"
-                            )
+                with col3:
+                    interpolation_method = st.selectbox(
+                        "Interpolation for smoothness",
+                        ['None', 'Linear', 'Cubic'],
+                        index=0,
+                        key="interp_3d"
+                    )
                     
-                    col1, col2, col3 = st.columns(3)
+            col1, col2, col3 = st.columns(3)
                     
-                    with col1:
-                        dopant_3d = st.selectbox("Dopant D", sorted(df['dopant'].unique()), key="3d_dopant")
+            with col1:
+                dopant_3d = st.selectbox("Dopant D", sorted(df['dopant'].unique()), key="3d_dopant")
                     
-                    with col2:
-                        property_3d = st.radio("Property", ["ΔH (kJ/mol)", "ΔS (J/mol·K)"], 
-                                              horizontal=True, key="3d_property")
+            with col2:
+                property_3d = st.radio("Property", ["ΔH (kJ/mol)", "ΔS (J/mol·K)"], 
+                                      horizontal=True, key="3d_property")
                     
-                    with col3:
-                        show_contours = st.checkbox("Show contour projections", value=True, key="3d_contours")
-                        show_points = st.checkbox("Show grid points", value=False, key="3d_points")
+            with col3:
+                show_contours = st.checkbox("Show contour projections", value=True, key="3d_contours")
+                show_points = st.checkbox("Show grid points", value=False, key="3d_points")
                     
-                    if st.button("Generate 3D Surface", key="calc_mixed_3d"):
-                        with st.spinner(f"Generating 3D property landscape (y_step={y_step}, x_step={x_step})..."):
-                            prop_type = 'delta_H' if property_3d == "ΔH (kJ/mol)" else 'delta_S'
+            if st.button("Generate 3D Surface", key="calc_mixed_3d"):
+                with st.spinner(f"Generating 3D property landscape (y_step={y_step}, x_step={x_step})..."):
+                    prop_type = 'delta_H' if property_3d == "ΔH (kJ/mol)" else 'delta_S'
                             
-                            # Используем обновленную функцию с параметрами шага
-                            X_mesh, Y_mesh, Z_mesh, x_unique, y_unique = calculate_mixed_site_3d_surface(
-                                B1_3d, B2_3d, dopant_3d, model_data, prop_type, y_step, x_step
-                            )
+                    # Используем обновленную функцию с параметрами шага
+                    X_mesh, Y_mesh, Z_mesh, x_unique, y_unique = calculate_mixed_site_3d_surface(
+                        B1_3d, B2_3d, dopant_3d, model_data, prop_type, y_step, x_step
+                    )
                             
-                            # Опциональная интерполяция для сглаживания
-                            if interpolation_method != 'None' and not np.isnan(Z_mesh).all():
-                                from scipy.interpolate import griddata
+                    # Опциональная интерполяция для сглаживания
+                    if interpolation_method != 'None' and not np.isnan(Z_mesh).all():
+                        from scipy.interpolate import griddata
                                 
-                                # Создаем более плотную сетку для интерполяции
-                                x_fine = np.linspace(x_unique.min(), x_unique.max(), 100)
-                                y_fine = np.linspace(y_unique.min(), y_unique.max(), 100)
-                                X_fine, Y_fine = np.meshgrid(x_fine, y_fine)
+                        # Создаем более плотную сетку для интерполяции
+                        x_fine = np.linspace(x_unique.min(), x_unique.max(), 100)
+                        y_fine = np.linspace(y_unique.min(), y_unique.max(), 100)
+                        X_fine, Y_fine = np.meshgrid(x_fine, y_fine)
                                 
-                                # Собираем точки с известными значениями
-                                points = []
-                                values = []
-                                for i in range(len(x_unique)):
-                                    for j in range(len(y_unique)):
-                                        if not np.isnan(Z_mesh[j, i]):
-                                            points.append([x_unique[i], y_unique[j]])
-                                            values.append(Z_mesh[j, i])
+                        # Собираем точки с известными значениями
+                        points = []
+                        values = []
+                        for i in range(len(x_unique)):
+                            for j in range(len(y_unique)):
+                                if not np.isnan(Z_mesh[j, i]):
+                                    points.append([x_unique[i], y_unique[j]])
+                                    values.append(Z_mesh[j, i])
                                 
-                                if len(points) >= 4:
-                                    method = 'cubic' if interpolation_method == 'Cubic' else 'linear'
-                                    Z_fine = griddata(points, values, (X_fine, Y_fine), method=method)
-                                    X_mesh, Y_mesh, Z_mesh = X_fine, Y_fine, Z_fine
+                        if len(points) >= 4:
+                            method = 'cubic' if interpolation_method == 'Cubic' else 'linear'
+                            Z_fine = griddata(points, values, (X_fine, Y_fine), method=method)
+                            X_mesh, Y_mesh, Z_mesh = X_fine, Y_fine, Z_fine
                         
-                        fig = go.Figure()
+                fig = go.Figure()
                         
-                        # Add surface
-                        fig.add_trace(go.Surface(
-                            x=X_mesh,
-                            y=Y_mesh,
-                            z=Z_mesh,
-                            colorscale='RdBu_r' if property_3d == "ΔH (kJ/mol)" else 'Viridis',
-                            colorbar=dict(title=property_3d),
-                            contours=dict(
-                                z=dict(show=show_contours, usecolormap=True, 
-                                      highlightcolor="limegreen", project=dict(z=True))
-                            ),
-                            opacity=0.9
-                        ))
+                # Add surface
+                fig.add_trace(go.Surface(
+                    x=X_mesh,
+                    y=Y_mesh,
+                    z=Z_mesh,
+                    colorscale='RdBu_r' if property_3d == "ΔH (kJ/mol)" else 'Viridis',
+                    colorbar=dict(title=property_3d),
+                    contours=dict(
+                        z=dict(show=show_contours, usecolormap=True, 
+                              highlightcolor="limegreen", project=dict(z=True))
+                    ),
+                    opacity=0.9
+                ))
                         
-                        # Add grid points if requested
-                        if show_points and 'x_unique' in locals():
-                            # Собираем все точки сетки
-                            points_x = []
-                            points_y = []
-                            points_z = []
-                            for i in range(len(x_unique)):
-                                for j in range(len(y_unique)):
-                                    if not np.isnan(Z_mesh[j, i]) if isinstance(Z_mesh, np.ndarray) else True:
-                                        points_x.append(x_unique[i])
-                                        points_y.append(y_unique[j])
-                                        points_z.append(Z_mesh[j, i] if isinstance(Z_mesh, np.ndarray) else Z_mesh[j, i])
+                # Add grid points if requested
+                if show_points and 'x_unique' in locals():
+                    # Собираем все точки сетки
+                    points_x = []
+                    points_y = []
+                    points_z = []
+                    for i in range(len(x_unique)):
+                        for j in range(len(y_unique)):
+                            if not np.isnan(Z_mesh[j, i]) if isinstance(Z_mesh, np.ndarray) else True:
+                                points_x.append(x_unique[i])
+                                points_y.append(y_unique[j])
+                                points_z.append(Z_mesh[j, i] if isinstance(Z_mesh, np.ndarray) else Z_mesh[j, i])
                             
-                            fig.add_trace(go.Scatter3d(
-                                x=points_x,
-                                y=points_y,
-                                z=points_z,
-                                mode='markers',
-                                marker=dict(size=3, color='black', symbol='circle'),
-                                name='Grid points',
-                                showlegend=True
-                            ))
+                    fig.add_trace(go.Scatter3d(
+                        x=points_x,
+                        y=points_y,
+                        z=points_z,
+                        mode='markers',
+                        marker=dict(size=3, color='black', symbol='circle'),
+                        name='Grid points',
+                        showlegend=True
+                    ))
                         
-                        # Add contour projections on planes
-                        if show_contours:
-                            z_min = np.nanmin(Z_mesh) if not np.all(np.isnan(Z_mesh)) else -150
-                            fig.add_trace(go.Surface(
-                                x=X_mesh,
-                                y=Y_mesh,
-                                z=np.full_like(Z_mesh, z_min - 10),
-                                surfacecolor=Z_mesh,
-                                colorscale='RdBu_r' if property_3d == "ΔH (kJ/mol)" else 'Viridis',
-                                showscale=False,
-                                opacity=0.3
-                            ))
+                # Add contour projections on planes
+                if show_contours:
+                    z_min = np.nanmin(Z_mesh) if not np.all(np.isnan(Z_mesh)) else -150
+                    fig.add_trace(go.Surface(
+                        x=X_mesh,
+                        y=Y_mesh,
+                        z=np.full_like(Z_mesh, z_min - 10),
+                        surfacecolor=Z_mesh,
+                        colorscale='RdBu_r' if property_3d == "ΔH (kJ/mol)" else 'Viridis',
+                        showscale=False,
+                        opacity=0.3
+                    ))
                         
-                        title_text = f"3D Property Landscape: Ba{B1_3d}₁₋ₓ₋ᵧ{B2_3d}ₓ{dopant_3d}ᵧO₃₋ₓ/₂<br>"
-                        title_text += f"Color: {property_3d} | Grid: y_step={y_step}, x_step={x_step}"
+                title_text = f"3D Property Landscape: Ba{B1_3d}₁₋ₓ₋ᵧ{B2_3d}ₓ{dopant_3d}ᵧO₃₋ₓ/₂<br>"
+                title_text += f"Color: {property_3d} | Grid: y_step={y_step}, x_step={x_step}"
                         
-                        fig.update_layout(
-                            title=title_text,
-                            scene=dict(
-                                xaxis_title='x (B2 concentration)',
-                                yaxis_title='y (dopant concentration)',
-                                zaxis_title=property_3d,
-                                camera=dict(eye=dict(x=1.5, y=1.5, z=1.5))
-                            ),
-                            width=900,
-                            height=700,
-                            margin=dict(l=65, r=50, b=65, t=90)
-                        )
+                fig.update_layout(
+                    title=title_text,
+                    scene=dict(
+                        xaxis_title='x (B2 concentration)',
+                        yaxis_title='y (dopant concentration)',
+                        zaxis_title=property_3d,
+                        camera=dict(eye=dict(x=1.5, y=1.5, z=1.5))
+                    ),
+                    width=900,
+                    height=700,
+                    margin=dict(l=65, r=50, b=65, t=90)
+                )
                         
-                        st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True)
                         
-                        # Информация о расчете
-                        st.markdown(f"""
-                        <div class="card">
-                            <h4>📊 Calculation Summary</h4>
-                            <ul>
-                                <li><b>Dopant (y) range:</b> 0 → 0.3 with step {y_step} → {int(0.3 / y_step) + 1} points</li>
-                                <li><b>B2 (x) range:</b> 0 → 1-y with step {x_step} → variable points</li>
-                                <li><b>Interpolation:</b> {interpolation_method if interpolation_method != 'None' else 'None (raw grid)'}</li>
-                                <li><b>Total calculated points:</b> ~{len(x_unique) * len(y_unique)}</li>
-                            </ul>
-                        </div>
-                        """, unsafe_allow_html=True)
+                # Информация о расчете
+                st.markdown(f"""
+                <div class="card">
+                    <h4>📊 Calculation Summary</h4>
+                    <ul>
+                        <li><b>Dopant (y) range:</b> 0 → 0.3 with step {y_step} → {int(0.3 / y_step) + 1} points</li>
+                        <li><b>B2 (x) range:</b> 0 → 1-y with step {x_step} → variable points</li>
+                        <li><b>Interpolation:</b> {interpolation_method if interpolation_method != 'None' else 'None (raw grid)'}</li>
+                        <li><b>Total calculated points:</b> ~{len(x_unique) * len(y_unique)}</li>
+                    </ul>
+                </div>
+                """, unsafe_allow_html=True)
                         
-                        # Добавляем возможность скачать данные
-                        if st.button("📥 Download 3D surface data as CSV", key="download_3d_data"):
-                            # Собираем данные в DataFrame
-                            import pandas as pd
-                            data_rows = []
-                            for i in range(len(x_unique)):
-                                for j in range(len(y_unique)):
-                                    if not np.isnan(Z_mesh[j, i]):
-                                        data_rows.append({
-                                            'x (B2 fraction)': x_unique[i],
-                                            'y (dopant concentration)': y_unique[j],
-                                            property_3d: Z_mesh[j, i]
-                                        })
+                # Добавляем возможность скачать данные
+                if st.button("📥 Download 3D surface data as CSV", key="download_3d_data"):
+                    # Собираем данные в DataFrame
+                    import pandas as pd
+                    data_rows = []
+                    for i in range(len(x_unique)):
+                        for j in range(len(y_unique)):
+                            if not np.isnan(Z_mesh[j, i]):
+                                data_rows.append({
+                                    'x (B2 fraction)': x_unique[i],
+                                    'y (dopant concentration)': y_unique[j],
+                                    property_3d: Z_mesh[j, i]
+                                })
                             
-                            df_export = pd.DataFrame(data_rows)
-                            csv = df_export.to_csv(index=False)
-                            st.download_button(
-                                label="Confirm Download",
-                                data=csv,
-                                file_name=f"3D_surface_{B1_3d}{B2_3d}_{dopant_3d}_{property_3d}.csv",
-                                mime="text/csv"
-                            )
+                    df_export = pd.DataFrame(data_rows)
+                    csv = df_export.to_csv(index=False)
+                    st.download_button(
+                        label="Confirm Download",
+                        data=csv,
+                        file_name=f"3D_surface_{B1_3d}{B2_3d}_{dopant_3d}_{property_3d}.csv",
+                        mime="text/csv"
+                    )
     
     # =========================================================================
     # Page 4: Model Performance (Enhanced)
