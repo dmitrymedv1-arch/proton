@@ -453,35 +453,326 @@ def get_ionization_potential(element):
 
 def calculate_proton_concentration(delta_H, delta_S, T, pH2O, content):
     """
-    Calculate proton concentration [OH] using the formula:
-    lnKw = -ΔH/RT + ΔS/R
-    [OH] = {3Kw*pH2O - [Kw*pH2O*(9*Kw*pH2O - 6*Kw*pH2O*[D] + 
-            Kw*pH2O*[D]^2 + 24*[D] - 4[D]^2)]^(1/2)} / (Kw*pH2O - 4)
+    Calculate proton concentration [OH] using the correct thermodynamic model.
+    
+    For the hydration reaction: H2O + Vo¨ + Ooˣ ⇄ 2OHo˙
+    
+    The equilibrium constant: K = exp(-ΔG/RT)
+    Proton concentration (in fraction of dopant concentration): 
+    [OH] = [D] * K * sqrt(pH2O) / (1 + K * sqrt(pH2O))
+    
+    Parameters:
+    -----------
+    delta_H : float
+        Enthalpy of hydration (kJ/mol)
+    delta_S : float
+        Entropy of hydration (J/mol·K)
+    T : float
+        Temperature (K)
+    pH2O : float
+        Water vapor pressure (atm)
+    content : float
+        Dopant concentration (acceptor concentration [D])
+    
+    Returns:
+    --------
+    float : Proton concentration [OH] (in same units as content)
     """
-    R = 0.008314  # kJ/mol·K
+    R = 0.008314  # Gas constant (kJ/mol·K)
+    
+    # Calculate Gibbs free energy
+    delta_G = delta_H - T * delta_S / 1000  # Convert ΔS from J to kJ
     
     # Calculate equilibrium constant
-    lnKw = -delta_H / (R * T) + delta_S / R
-    Kw = np.exp(lnKw)
+    K = np.exp(-delta_G / (R * T))
     
-    # Calculate proton concentration
-    D = content  # Dopant concentration
+    # Calculate proton concentration (fraction of dopant sites)
+    # The formula: [OH] = [D] * K * sqrt(pH2O) / (1 + K * sqrt(pH2O))
+    sqrt_pH2O = np.sqrt(max(pH2O, 1e-10))  # Avoid negative or zero
+    
+    numerator = content * K * sqrt_pH2O
+    denominator = 1 + K * sqrt_pH2O
+    
+    if denominator > 1e-10:
+        OH = numerator / denominator
+        # Constrain to physical limits
+        OH = max(0, min(OH, content))
+    else:
+        OH = 0
+    
+    return OH
+
+def calculate_mixed_site_properties(B1, B2, dopant, y_fixed, model_data):
+    """
+    Calculate properties for mixed B-site system: BaB1_{1-x-y}B2_x D_y O_{3-x/2}
+    using ideal additive model based on end-member properties.
+    
+    Parameters:
+    -----------
+    B1 : str
+        First B-site cation (e.g., 'Zr')
+    B2 : str
+        Second B-site cation (e.g., 'Ce')
+    dopant : str
+        Dopant cation (e.g., 'Y')
+    y_fixed : float
+        Fixed dopant concentration on B-site
+    model_data : dict
+        Trained model data containing ML models and encoders
+    
+    Returns:
+    --------
+    tuple : (x_values, delta_H_values, delta_S_values)
+        Arrays of predicted properties as function of x
+    """
+    
+    # Generate x values from 0 to 1-y_fixed
+    x_max = 1 - y_fixed
+    x_values = np.arange(0, x_max + 0.01, 0.05)
+    x_values = np.clip(x_values, 0, x_max)
+    
+    delta_H_values = []
+    delta_S_values = []
+    
+    # For each x, calculate weighted average of end-member properties
+    for x in x_values:
+        # Composition: BaB1_{1-x-y}B2_x D_y
+        # End-member 1: BaB1_{1-y}D_y (pure B1 with dopant)
+        # End-member 2: BaB2_{1-y}D_y (pure B2 with dopant)
+        # Weight: (1-x) for B1 end-member, x for B2 end-member
+        
+        weight_B1 = 1 - x
+        weight_B2 = x
+        
+        # Get properties for end-member 1 (pure B1 with dopant)
+        props1 = get_end_member_properties(B1, dopant, y_fixed, model_data)
+        
+        # Get properties for end-member 2 (pure B2 with dopant)
+        props2 = get_end_member_properties(B2, dopant, y_fixed, model_data)
+        
+        # Weighted average (ideal mixing)
+        delta_H_mixed = weight_B1 * props1['delta_H'] + weight_B2 * props2['delta_H']
+        delta_S_mixed = weight_B1 * props1['delta_S'] + weight_B2 * props2['delta_S']
+        
+        delta_H_values.append(delta_H_mixed)
+        delta_S_values.append(delta_S_mixed)
+    
+    return x_values, np.array(delta_H_values), np.array(delta_S_values)
+
+
+def get_end_member_properties(B_cation, dopant, content, model_data):
+    """
+    Get predicted properties for an end-member composition: BaB_{1-content}D_{content}O_{3-content/2}
+    
+    Parameters:
+    -----------
+    B_cation : str
+        B-site cation
+    dopant : str
+        Dopant cation
+    content : float
+        Dopant concentration
+    model_data : dict
+        Trained model data
+    
+    Returns:
+    --------
+    dict : {'delta_H': float, 'delta_S': float}
+    """
+    
+    # For end-member, A-cation is Ba (most common)
+    A_cation = 'Ba'
+    
+    # Calculate descriptors
+    input_row = pd.Series({
+        'A_cation': A_cation,
+        'B_cation': B_cation,
+        'dopant': dopant,
+        'content': content
+    })
+    
+    input_desc = calculate_descriptors(input_row)
+    
+    # Prepare features for prediction
+    feature_names = model_data['feature_names']
+    
+    X_pred = pd.DataFrame([{
+        'content': input_desc.get('content', content),
+        'r_A_XII': input_desc.get('r_A_XII', 0),
+        'r_B_VI': input_desc.get('r_B_VI', 0),
+        'r_D_VI': input_desc.get('r_D_VI', 0),
+        'r_B_avg': input_desc.get('r_B_avg', 0),
+        'delta_r_B': input_desc.get('delta_r_B', 0),
+        't_Goldschmidt': input_desc.get('t_Goldschmidt', 0),
+        'octahedral_factor': input_desc.get('octahedral_factor', 0),
+        'global_instability': input_desc.get('global_instability', 0),
+        'lattice_energy': input_desc.get('lattice_energy', 0),
+        'chi_A': input_desc.get('chi_A', 0),
+        'chi_B': input_desc.get('chi_B', 0),
+        'chi_D': input_desc.get('chi_D', 0),
+        'chi_B_avg': input_desc.get('chi_B_avg', 0),
+        'chi_diff': input_desc.get('chi_diff', 0),
+        'chi_product': input_desc.get('chi_product', 0),
+        'polarizability_avg': input_desc.get('polarizability_avg', 0),
+        'ionization_avg': input_desc.get('ionization_avg', 0),
+        'charge_density_A': input_desc.get('charge_density_A', 0),
+        'charge_density_B': input_desc.get('charge_density_B', 0),
+        'oxygen_vacancy': input_desc.get('oxygen_vacancy', 0)
+    }])
+    
+    # Add encoded categorical features
+    try:
+        X_pred['A_enc'] = model_data['le_A'].transform([A_cation])[0] if A_cation in model_data['le_A'].classes_ else -1
+    except:
+        X_pred['A_enc'] = -1
     
     try:
-        term = Kw * pH2O
-        sqrt_term = term * (9*term - 6*term*D + term*D**2 + 24*D - 4*D**2)
-        
-        if sqrt_term >= 0:
-            numerator = 3*term - np.sqrt(sqrt_term)
-            denominator = term - 4
-            
-            if abs(denominator) > 1e-10:
-                OH = numerator / denominator
-                return max(0, min(OH, D))  # Constrain between 0 and D
+        X_pred['B_enc'] = model_data['le_B'].transform([B_cation])[0] if B_cation in model_data['le_B'].classes_ else -1
     except:
-        pass
+        X_pred['B_enc'] = -1
     
-    return 0
+    try:
+        X_pred['D_enc'] = model_data['le_D'].transform([dopant])[0] if dopant in model_data['le_D'].classes_ else -1
+    except:
+        X_pred['D_enc'] = -1
+    
+    # Ensure all required features are present
+    for col in feature_names:
+        if col not in X_pred.columns:
+            X_pred[col] = 0
+    
+    X_pred = X_pred[feature_names]
+    X_pred_scaled = model_data['scaler'].transform(X_pred)
+    
+    # Get predictions from ensemble
+    pred_H_xgb = model_data['models']['xgb_H'].predict(X_pred_scaled)[0]
+    pred_H_rf = model_data['models']['rf_H'].predict(X_pred_scaled)[0]
+    
+    pred_S_xgb = model_data['models']['xgb_S'].predict(X_pred_scaled)[0]
+    pred_S_rf = model_data['models']['rf_S'].predict(X_pred_scaled)[0]
+    
+    # Ensemble with weights (XGBoost: 0.6, RF: 0.4)
+    delta_H = 0.6 * pred_H_xgb + 0.4 * pred_H_rf
+    delta_S = 0.6 * pred_S_xgb + 0.4 * pred_S_rf
+    
+    return {'delta_H': delta_H, 'delta_S': delta_S}
+
+
+def calculate_mixed_site_3d_surface(B1, B2, dopant, model_data, property_type='delta_H'):
+    """
+    Generate 3D surface data for mixed B-site system.
+    
+    BaB1_{1-x-y}B2_x D_y O_{3-x/2}
+    
+    Parameters:
+    -----------
+    B1 : str
+        First B-site cation
+    B2 : str
+        Second B-site cation
+    dopant : str
+        Dopant cation
+    model_data : dict
+        Trained model data
+    property_type : str
+        'delta_H' or 'delta_S'
+    
+    Returns:
+    --------
+    tuple : (x_grid, y_grid, Z_grid)
+        Grids for 3D plotting
+    """
+    
+    # Define ranges
+    y_values = np.arange(0, 0.31, 0.05)  # 0 to 0.3 step 0.05
+    x_grid = []
+    y_grid = []
+    Z_grid = []
+    
+    for y in y_values:
+        x_max = 1 - y
+        if x_max <= 0:
+            continue
+        
+        x_values = np.arange(0, x_max + 0.01, 0.1)  # Step 0.1
+        x_values = np.clip(x_values, 0, x_max)
+        
+        for x in x_values:
+            # Weights for end-members
+            weight_B1 = 1 - x
+            weight_B2 = x
+            
+            # Get end-member properties
+            props1 = get_end_member_properties(B1, dopant, y, model_data)
+            props2 = get_end_member_properties(B2, dopant, y, model_data)
+            
+            # Weighted average
+            if property_type == 'delta_H':
+                value = weight_B1 * props1['delta_H'] + weight_B2 * props2['delta_H']
+            else:
+                value = weight_B1 * props1['delta_S'] + weight_B2 * props2['delta_S']
+            
+            x_grid.append(x)
+            y_grid.append(y)
+            Z_grid.append(value)
+    
+    # Convert to 2D grid for surface plotting
+    x_unique = np.sort(np.unique(x_grid))
+    y_unique = np.sort(np.unique(y_grid))
+    
+    X_mesh, Y_mesh = np.meshgrid(x_unique, y_unique)
+    Z_mesh = np.full_like(X_mesh, np.nan, dtype=float)
+    
+    for i, x_val in enumerate(x_unique):
+        for j, y_val in enumerate(y_unique):
+            # Find matching value
+            for k in range(len(x_grid)):
+                if abs(x_grid[k] - x_val) < 0.01 and abs(y_grid[k] - y_val) < 0.01:
+                    Z_mesh[j, i] = Z_grid[k]
+                    break
+    
+    return X_mesh, Y_mesh, Z_mesh
+
+def predict_concentration_dependence_for_B_families(dopant, b_cations_list, model_data, property_type='delta_H'):
+    """
+    Predict ΔH or ΔS as function of dopant content for multiple B-cation families.
+    
+    Parameters:
+    -----------
+    dopant : str
+        Dopant cation (e.g., 'Sc', 'Y', 'In')
+    b_cations_list : list
+        List of B-cations to include (e.g., ['Zr', 'Ce', 'Sn', 'Ti', 'Hf'])
+    model_data : dict
+        Trained model data
+    property_type : str
+        'delta_H' or 'delta_S'
+    
+    Returns:
+    --------
+    dict : {B_cation: (x_values, property_values)}
+    """
+    
+    A_cation = 'Ba'
+    x_values = np.arange(0, 0.31, 0.05)  # 0 to 0.3 step 0.05
+    
+    results = {}
+    
+    for B_cation in b_cations_list:
+        property_values = []
+        
+        for x in x_values:
+            # Get predicted properties for this composition
+            props = get_end_member_properties(B_cation, dopant, x, model_data)
+            
+            if property_type == 'delta_H':
+                property_values.append(props['delta_H'])
+            else:
+                property_values.append(props['delta_S'])
+        
+        results[B_cation] = (x_values, np.array(property_values))
+    
+    return results
 
 def calculate_descriptors(row):
     """Calculate enhanced descriptors for a given material"""
@@ -1281,20 +1572,6 @@ def create_proton_concentration_3d(model_data, df_features):
         x_min = st.number_input("Min dopant content", value=0.0, min_value=0.0, max_value=0.8, step=0.05)
         x_max = st.number_input("Max dopant content", value=0.5, min_value=0.0, max_value=0.8, step=0.05)
     
-    # Create input row for descriptor calculation
-    input_row = pd.Series({
-        'A_cation': selected_a,
-        'B_cation': selected_b,
-        'dopant': selected_d,
-        'content': 0.2  # Default value, will be varied
-    })
-    
-    # Calculate base descriptors
-    base_desc = calculate_descriptors(input_row)
-    
-    # Create grids for 3D visualization
-    n_points = 30
-    
     # Option 1: [OH] = f(x, T) at fixed pH2O
     st.subheader("Proton Concentration vs Dopant Content and Temperature")
     
@@ -1305,11 +1582,11 @@ def create_proton_concentration_3d(model_data, df_features):
                            format="%.1e",
                            key='fixed_pH2O')
     
+    n_points = 30
     x_grid = np.linspace(x_min, x_max, n_points)
-    T_grid = np.linspace(T_min + 273.15, T_max + 273.15, n_points)  # Convert to Kelvin
+    T_grid = np.linspace(T_min + 273.15, T_max + 273.15, n_points)
     X_grid, T_mesh = np.meshgrid(x_grid, T_grid)
     
-    # Get ΔH and ΔS predictions for each x
     OH_grid = np.zeros_like(X_grid)
     
     # Create progress bar
@@ -1319,16 +1596,22 @@ def create_proton_concentration_3d(model_data, df_features):
     for i, x_val in enumerate(x_grid):
         status_text.text(f"Calculating for x = {x_val:.3f}...")
         
-        # Update input with current x
-        input_row['content'] = x_val
+        # Get predictions for this composition
+        input_row = pd.Series({
+            'A_cation': selected_a,
+            'B_cation': selected_b,
+            'dopant': selected_d,
+            'content': x_val
+        })
+        
         desc = calculate_descriptors(input_row)
         
         # Prepare feature vector
         X_pred = pd.DataFrame([{
             'content': desc.get('content', x_val),
-            'r_A': desc.get('r_A_XII', 0),
-            'r_B': desc.get('r_B_VI', 0),
-            'r_D': desc.get('r_D_VI', 0),
+            'r_A_XII': desc.get('r_A_XII', 0),
+            'r_B_VI': desc.get('r_B_VI', 0),
+            'r_D_VI': desc.get('r_D_VI', 0),
             'r_B_avg': desc.get('r_B_avg', 0),
             'delta_r_B': desc.get('delta_r_B', 0),
             't_Goldschmidt': desc.get('t_Goldschmidt', 0),
@@ -1374,7 +1657,7 @@ def create_proton_concentration_3d(model_data, df_features):
         delta_H = model_data['models']['xgb_H'].predict(X_pred_scaled)[0]
         delta_S = model_data['models']['xgb_S'].predict(X_pred_scaled)[0]
         
-        # Calculate [OH] for all temperatures
+        # Calculate [OH] for all temperatures using corrected formula
         for j, T in enumerate(T_grid):
             OH_grid[j, i] = calculate_proton_concentration(delta_H, delta_S, T, fixed_pH2O, x_val)
         
@@ -1386,10 +1669,9 @@ def create_proton_concentration_3d(model_data, df_features):
     # Create 3D plot
     fig = go.Figure()
     
-    # Add surface
     fig.add_trace(go.Surface(
         x=x_grid,
-        y=T_grid - 273.15,  # Convert back to °C for display
+        y=T_grid - 273.15,
         z=OH_grid,
         colorscale='Viridis',
         colorbar=dict(title="[OH]"),
@@ -1399,7 +1681,7 @@ def create_proton_concentration_3d(model_data, df_features):
     ))
     
     fig.update_layout(
-        title=f'Proton Concentration [OH] for {selected_a}{selected_b}-{selected_d}<br>at pH2O = {fixed_pH2O:.2e} atm',
+        title=f'Proton Concentration [OH] for {selected_a}{selected_b}{selected_d}<br>at pH2O = {fixed_pH2O:.2e} atm',
         scene=dict(
             xaxis_title='Dopant Content, x',
             yaxis_title='Temperature (°C)',
@@ -1422,21 +1704,21 @@ def create_proton_concentration_3d(model_data, df_features):
                         step=0.01,
                         key='fixed_x')
     
-    # Create grids
-    pH2O_grid = np.logspace(log_pH2O_min, log_pH2O_max, n_points)
-    T_grid2 = np.linspace(T_min + 273.15, T_max + 273.15, n_points)
-    pH2O_mesh, T_mesh2 = np.meshgrid(pH2O_grid, T_grid2)
-    
     # Get predictions for fixed x
-    input_row['content'] = fixed_x
+    input_row = pd.Series({
+        'A_cation': selected_a,
+        'B_cation': selected_b,
+        'dopant': selected_d,
+        'content': fixed_x
+    })
+    
     desc = calculate_descriptors(input_row)
     
-    # Prepare feature vector
     X_pred = pd.DataFrame([{
         'content': desc.get('content', fixed_x),
-        'r_A': desc.get('r_A_XII', 0),
-        'r_B': desc.get('r_B_VI', 0),
-        'r_D': desc.get('r_D_VI', 0),
+        'r_A_XII': desc.get('r_A_XII', 0),
+        'r_B_VI': desc.get('r_B_VI', 0),
+        'r_D_VI': desc.get('r_D_VI', 0),
         'r_B_avg': desc.get('r_B_avg', 0),
         'delta_r_B': desc.get('delta_r_B', 0),
         't_Goldschmidt': desc.get('t_Goldschmidt', 0),
@@ -1454,7 +1736,6 @@ def create_proton_concentration_3d(model_data, df_features):
         'charge_density_B': desc.get('charge_density_B', 0)
     }])
     
-    # Add categorical features
     try:
         X_pred['A_enc'] = model_data['le_A'].transform([selected_a])[0] if selected_a in model_data['le_A'].classes_ else -1
     except:
@@ -1470,7 +1751,6 @@ def create_proton_concentration_3d(model_data, df_features):
     except:
         X_pred['D_enc'] = -1
     
-    # Ensure all required features
     for col in model_data['feature_names']:
         if col not in X_pred.columns:
             X_pred[col] = 0
@@ -1478,11 +1758,14 @@ def create_proton_concentration_3d(model_data, df_features):
     X_pred = X_pred[model_data['feature_names']]
     X_pred_scaled = model_data['scaler'].transform(X_pred)
     
-    # Get predictions
     delta_H = model_data['models']['xgb_H'].predict(X_pred_scaled)[0]
     delta_S = model_data['models']['xgb_S'].predict(X_pred_scaled)[0]
     
-    # Calculate [OH] grid
+    # Create grids
+    pH2O_grid = np.logspace(log_pH2O_min, log_pH2O_max, n_points)
+    T_grid2 = np.linspace(T_min + 273.15, T_max + 273.15, n_points)
+    pH2O_mesh, T_mesh2 = np.meshgrid(pH2O_grid, T_grid2)
+    
     OH_grid2 = np.zeros_like(pH2O_mesh)
     
     for i in range(n_points):
@@ -1491,11 +1774,10 @@ def create_proton_concentration_3d(model_data, df_features):
                 delta_H, delta_S, T_mesh2[i, j], pH2O_mesh[i, j], fixed_x
             )
     
-    # Create second 3D plot
     fig2 = go.Figure()
     
     fig2.add_trace(go.Surface(
-        x=np.log10(pH2O_grid),  # Use log scale for better visualization
+        x=np.log10(pH2O_grid),
         y=T_grid2 - 273.15,
         z=OH_grid2,
         colorscale='Plasma',
@@ -1506,7 +1788,7 @@ def create_proton_concentration_3d(model_data, df_features):
     ))
     
     fig2.update_layout(
-        title=f'Proton Concentration [OH] for {selected_a}{selected_b}-{selected_d}<br>at x = {fixed_x:.2f}',
+        title=f'Proton Concentration [OH] for {selected_a}{selected_b}{selected_d}<br>at x = {fixed_x:.2f}',
         scene=dict(
             xaxis_title='log(pH2O/atm)',
             yaxis_title='Temperature (°C)',
@@ -1528,7 +1810,6 @@ def create_proton_concentration_3d(model_data, df_features):
     with col1:
         st.write("**Optimal conditions for max [OH]**")
         
-        # Find maximum
         max_idx = np.unravel_index(np.argmax(OH_grid2), OH_grid2.shape)
         opt_T = T_grid2[max_idx[0]] - 273.15
         opt_pH2O = pH2O_grid[max_idx[1]]
@@ -1548,17 +1829,15 @@ def create_proton_concentration_3d(model_data, df_features):
                               levels=20, cmap='viridis')
         plt.colorbar(contour, ax=ax, label='[OH]')
         
-        # Mark optimum
         ax.plot(np.log10(opt_pH2O), opt_T, 'r*', markersize=15, 
                 label=f'Optimum: {max_OH:.4f}')
         
-        # Add contour lines
         ax.contour(np.log10(pH2O_grid), T_grid2 - 273.15, OH_grid2, 
                   levels=10, colors='white', linewidths=0.5, alpha=0.5)
         
         ax.set_xlabel('log(pH2O/atm)')
         ax.set_ylabel('Temperature (°C)')
-        ax.set_title(f'[OH] Contour Map for {selected_a}{selected_b}-{selected_d}, x={fixed_x:.2f}')
+        ax.set_title(f'[OH] Contour Map for {selected_a}{selected_b}{selected_d}, x={fixed_x:.2f}')
         ax.legend(loc='best')
         ax.grid(True, alpha=0.3)
         
@@ -4251,6 +4530,293 @@ def main():
         
         st.dataframe(pd.DataFrame(similar_data), use_container_width=True)
 
+        # =========================================================================
+        # NEW SECTION: Concentration dependence for multiple B-cations
+        # =========================================================================
+        st.markdown("---")
+        st.markdown("## 📈 Concentration Dependence Across B-cation Families")
+        
+        st.markdown("""
+        <div class="card">
+            <p>Predict how ΔH and ΔS vary with dopant concentration for different B-cation families.
+            Select a dopant and choose which B-cations to compare.</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            # Dopant selection
+            all_dopants = sorted(df['dopant'].unique())
+            selected_dopant_fam = st.selectbox("Select dopant", all_dopants, key="fam_dopant")
+        
+        with col2:
+            # B-cation selection (multiple)
+            all_b_cations = ['Zr', 'Ce', 'Sn', 'Ti', 'Hf']
+            selected_b_families = st.multiselect(
+                "Select B-cation families to compare",
+                all_b_cations,
+                default=['Zr', 'Ce']
+            )
+        
+        with col3:
+            # Property to plot
+            fam_property = st.radio(
+                "Property to display",
+                ["ΔH (kJ/mol)", "ΔS (J/mol·K)"],
+                horizontal=True,
+                key="fam_property"
+            )
+            show_trend_lines_fam = st.checkbox("Show trend lines", value=True, key="fam_trend")
+        
+        if selected_b_families and selected_dopant_fam:
+            # Get predictions for all selected B-cations
+            prop_type = 'delta_H' if fam_property == "ΔH (kJ/mol)" else 'delta_S'
+            
+            with st.spinner("Calculating predictions..."):
+                results = predict_concentration_dependence_for_B_families(
+                    selected_dopant_fam, selected_b_families, model_data, prop_type
+                )
+            
+            # Create plot
+            fig, ax = plt.subplots(figsize=(12, 7))
+            
+            colors = plt.cm.tab10(np.linspace(0, 1, len(selected_b_families)))
+            
+            for b_cat, color in zip(selected_b_families, colors):
+                x_vals, y_vals = results[b_cat]
+                
+                ax.plot(x_vals, y_vals, 'o-', linewidth=2, markersize=6,
+                       color=color, label=f'{b_cat}', alpha=0.8)
+                
+                if show_trend_lines_fam and len(x_vals) >= 3:
+                    # Add polynomial trend (degree 2)
+                    z = np.polyfit(x_vals, y_vals, 2)
+                    p = np.poly1d(z)
+                    x_smooth = np.linspace(x_vals.min(), x_vals.max(), 100)
+                    ax.plot(x_smooth, p(x_smooth), '--', color=color, alpha=0.5, linewidth=1)
+            
+            ax.set_xlabel('Dopant Concentration, x', fontsize=12)
+            
+            if fam_property == "ΔH (kJ/mol)":
+                ax.set_ylabel('ΔH (kJ mol⁻¹)', fontsize=12)
+                ax.set_title(f'Enthalpy vs Dopant Concentration for BaB₁₋ₓ{selected_dopant_fam}_xO₃₋ₓ/₂', 
+                            fontsize=14, fontweight='bold')
+            else:
+                ax.set_ylabel('ΔS (J mol⁻¹ K⁻¹)', fontsize=12)
+                ax.set_title(f'Entropy vs Dopant Concentration for BaB₁₋ₓ{selected_dopant_fam}_xO₃₋ₓ/₂', 
+                            fontsize=14, fontweight='bold')
+            
+            ax.legend(loc='best', fontsize=10)
+            ax.grid(True, alpha=0.3)
+            ax.set_xlim(0, 0.3)
+            
+            st.pyplot(fig)
+            plt.close()
+            
+            # Add note about the model
+            st.caption("Predictions are based on ensemble ML models trained on experimental data.")
+        
+        # =========================================================================
+        # NEW SECTION: Mixed B-site systems (solid solutions)
+        # =========================================================================
+        st.markdown("---")
+        st.markdown("## 🔬 Mixed B-site Systems (Solid Solutions)")
+        
+        st.markdown("""
+        <div class="card">
+            <p>Predict properties for mixed B-site perovskites of the form:<br>
+            <b>BaB1₁₋ₓ₋ᵧB2ₓDᵧO₃₋ₓ/₂</b><br>
+            using ideal mixing of end-member properties.</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        tab_mixed_2d, tab_mixed_3d = st.tabs(["2D Composition Dependence", "3D Property Landscape"])
+        
+        with tab_mixed_2d:
+            st.markdown("### 2D: Property vs B2 Concentration (x)")
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                B1_options = ['Zr', 'Ce', 'Sn', 'Ti', 'Hf']
+                selected_B1 = st.selectbox("B1 (base)", B1_options, key="mixed_B1")
+            
+            with col2:
+                B2_options = [b for b in B1_options if b != selected_B1]
+                selected_B2 = st.selectbox("B2 (substituent)", B2_options, key="mixed_B2")
+            
+            with col3:
+                dopant_options = sorted(df['dopant'].unique())
+                selected_dopant_mixed = st.selectbox("Dopant D", dopant_options, key="mixed_dopant")
+            
+            with col4:
+                y_fixed = st.slider("Fixed dopant concentration (y)", 0.0, 0.3, 0.1, 0.01, key="mixed_y")
+            
+            mixed_property = st.radio(
+                "Property to display",
+                ["ΔH (kJ/mol)", "ΔS (J/mol·K)"],
+                horizontal=True,
+                key="mixed_property_2d"
+            )
+            
+            show_trend_lines_mixed = st.checkbox("Show trend lines", value=True, key="mixed_trend_2d")
+            
+            if st.button("Calculate Mixed System Properties", key="calc_mixed_2d"):
+                with st.spinner("Calculating using ideal mixing model..."):
+                    x_values, delta_H_vals, delta_S_vals = calculate_mixed_site_properties(
+                        selected_B1, selected_B2, selected_dopant_mixed, y_fixed, model_data
+                    )
+                
+                fig, ax = plt.subplots(figsize=(10, 6))
+                
+                if mixed_property == "ΔH (kJ/mol)":
+                    y_vals = delta_H_vals
+                    ylabel = 'ΔH (kJ mol⁻¹)'
+                    title = f'Enthalpy of Mixing: Ba{selected_B1}₁₋ₓ₋{y_fixed:.2f}{selected_B2}ₓ{selected_dopant_mixed}{y_fixed:.2f}O₃₋ₓ/₂'
+                else:
+                    y_vals = delta_S_vals
+                    ylabel = 'ΔS (J mol⁻¹ K⁻¹)'
+                    title = f'Entropy of Mixing: Ba{selected_B1}₁₋ₓ₋{y_fixed:.2f}{selected_B2}ₓ{selected_dopant_mixed}{y_fixed:.2f}O₃₋ₓ/₂'
+                
+                ax.plot(x_values, y_vals, 'o-', linewidth=2, markersize=6,
+                       color=MODERN_COLORS['primary'], label=f'Predicted (ideal mixing)')
+                
+                if show_trend_lines_mixed and len(x_values) >= 3:
+                    z = np.polyfit(x_values, y_vals, 2)
+                    p = np.poly1d(z)
+                    x_smooth = np.linspace(x_values.min(), x_values.max(), 100)
+                    ax.plot(x_smooth, p(x_smooth), '--', color=MODERN_COLORS['secondary'], 
+                           alpha=0.7, linewidth=1.5, label='Quadratic fit')
+                
+                # Add vertical line at x=0 and x=1-y
+                ax.axvline(x=0, color='gray', linestyle=':', alpha=0.5)
+                ax.axvline(x=1-y_fixed, color='gray', linestyle=':', alpha=0.5, 
+                          label=f'x_max = {1-y_fixed:.2f}')
+                
+                ax.set_xlabel('x (fraction of B2 on B-site)', fontsize=12)
+                ax.set_ylabel(ylabel, fontsize=12)
+                ax.set_title(title, fontsize=12, fontweight='bold')
+                ax.legend(loc='best', fontsize=10)
+                ax.grid(True, alpha=0.3)
+                ax.set_xlim(0, 1-y_fixed)
+                
+                st.pyplot(fig)
+                plt.close()
+                
+                # Show end-member values
+                st.markdown("#### End-member Properties")
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    props1 = get_end_member_properties(selected_B1, selected_dopant_mixed, y_fixed, model_data)
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <div class="metric-label">Pure {selected_B1} (x=0)</div>
+                        <div class="metric-value">ΔH = {props1['delta_H']:.1f}</div>
+                        <div class="metric-delta">ΔS = {props1['delta_S']:.1f}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col2:
+                    props2 = get_end_member_properties(selected_B2, selected_dopant_mixed, y_fixed, model_data)
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <div class="metric-label">Pure {selected_B2} (x={1-y_fixed:.2f})</div>
+                        <div class="metric-value">ΔH = {props2['delta_H']:.1f}</div>
+                        <div class="metric-delta">ΔS = {props2['delta_S']:.1f}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+        
+        with tab_mixed_3d:
+            st.markdown("### 3D: Property Landscape (x vs y)")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                B1_3d = st.selectbox("B1 (base)", ['Zr', 'Ce', 'Sn', 'Ti', 'Hf'], key="3d_B1")
+            
+            with col2:
+                B2_3d_options = [b for b in ['Zr', 'Ce', 'Sn', 'Ti', 'Hf'] if b != B1_3d]
+                B2_3d = st.selectbox("B2 (substituent)", B2_3d_options, key="3d_B2")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                dopant_3d = st.selectbox("Dopant D", sorted(df['dopant'].unique()), key="3d_dopant")
+            
+            with col2:
+                property_3d = st.radio("Property", ["ΔH (kJ/mol)", "ΔS (J/mol·K)"], 
+                                      horizontal=True, key="3d_property")
+            
+            with col3:
+                show_contours = st.checkbox("Show contour projections", value=True, key="3d_contours")
+            
+            if st.button("Generate 3D Surface", key="calc_mixed_3d"):
+                with st.spinner("Generating 3D property landscape..."):
+                    prop_type = 'delta_H' if property_3d == "ΔH (kJ/mol)" else 'delta_S'
+                    X_mesh, Y_mesh, Z_mesh = calculate_mixed_site_3d_surface(
+                        B1_3d, B2_3d, dopant_3d, model_data, prop_type
+                    )
+                
+                fig = go.Figure()
+                
+                # Add surface
+                fig.add_trace(go.Surface(
+                    x=X_mesh,
+                    y=Y_mesh,
+                    z=Z_mesh,
+                    colorscale='RdBu_r' if property_3d == "ΔH (kJ/mol)" else 'Viridis',
+                    colorbar=dict(title=property_3d),
+                    contours=dict(
+                        z=dict(show=show_contours, usecolormap=True, 
+                              highlightcolor="limegreen", project=dict(z=True))
+                    )
+                ))
+                
+                # Add contour projections on planes
+                if show_contours:
+                    fig.add_trace(go.Surface(
+                        x=X_mesh,
+                        y=Y_mesh,
+                        z=np.full_like(Z_mesh, Z_mesh.min() - 10),
+                        surfacecolor=Z_mesh,
+                        colorscale='RdBu_r',
+                        showscale=False,
+                        opacity=0.3
+                    ))
+                
+                title_text = f"3D Property Landscape: Ba{B1_3d}₁₋ₓ₋ᵧ{B2_3d}ₓ{dopant_3d}ᵧO₃₋ₓ/₂<br>"
+                title_text += f"Color: {property_3d}"
+                
+                fig.update_layout(
+                    title=title_text,
+                    scene=dict(
+                        xaxis_title='x (B2 concentration)',
+                        yaxis_title='y (dopant concentration)',
+                        zaxis_title=property_3d,
+                        camera=dict(eye=dict(x=1.5, y=1.5, z=1.5))
+                    ),
+                    width=900,
+                    height=700,
+                    margin=dict(l=65, r=50, b=65, t=90)
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Add interpretation note
+                st.markdown("""
+                <div class="card">
+                    <h4>Interpretation</h4>
+                    <ul>
+                        <li>The surface shows predicted properties for all combinations of x (B2 fraction) and y (dopant concentration)</li>
+                        <li>Ideal mixing model assumes linear interpolation between end-members</li>
+                        <li>Regions with steep gradients indicate strong composition sensitivity</li>
+                        <li>Dark blue/red areas in ΔH maps indicate strong/weak hydration</li>
+                    </ul>
+                </div>
+                """, unsafe_allow_html=True)
+    
     # =========================================================================
     # Page 4: Model Performance (Enhanced)
     # =========================================================================
