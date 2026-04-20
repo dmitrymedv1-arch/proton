@@ -2333,6 +2333,8 @@ class ModernProgressBar:
 # Streamlit App with Modern UI
 # =============================================================================
 def main():
+    import pandas as pd  # ДОБАВИТЬ ЭТУ СТРОКУ
+    
     st.set_page_config(
         page_title="Proton Hydration Predictor v3.0",
         page_icon="💧",
