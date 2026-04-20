@@ -2460,7 +2460,7 @@ def main():
                 selected_b = st.selectbox("B-cation", b_cations)
             
             with col3:
-                dopants = ['All'] + sorted([d for d in df['dopant'].unique() if pd.notna(d)])
+                dopants = ['All'] + sorted([d for d in df['dopant'].unique() if d is not None and str(d) != 'nan'])
                 selected_d = st.selectbox("Dopant", dopants)
             
             with col4:
